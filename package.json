@@ -1,0 +1,15 @@
+{
+  "name": "unionam-tools",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/homepage",
+    "build": "npm run build -w apps/homepage",
+    "start": "npm run start -w apps/homepage",
+    "typecheck": "npm run typecheck -w apps/homepage"
+  }
+}
