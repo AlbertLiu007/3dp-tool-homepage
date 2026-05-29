@@ -1,7 +1,6 @@
 'use client';
 
 import { ChevronDown, Globe2, Languages } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -24,12 +23,14 @@ export function ToolHeader({
   language,
   labels,
   logoSrc,
+  homeHref = '/',
   navItems = [],
   onLanguageChange,
 }: {
   language: ToolLanguage;
   labels: ToolHeaderLabels;
   logoSrc: string;
+  homeHref?: string;
   navItems?: ToolHeaderNavItem[];
   onLanguageChange: (language: ToolLanguage) => void;
 }) {
@@ -45,8 +46,8 @@ export function ToolHeader({
       <div className="mx-auto max-w-[1480px] px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3">
-            <Link href="/" className="flex min-w-0 items-center gap-4">
-              <Image src={logoSrc} alt="UnionAM" width={186} height={56} priority className="h-10 w-auto shrink-0" />
+            <Link href={homeHref} className="flex min-w-0 items-center gap-4">
+              <img src={logoSrc} alt="UnionAM" width={186} height={56} className="h-10 w-auto shrink-0" decoding="async" fetchPriority="high" />
               <div className="min-w-0">
                 <div className="text-sm font-medium tracking-normal text-slate-800">{labels.appTitle}</div>
                 <div className="mt-0.5 text-[11px] font-normal text-slate-500">{labels.appSubtitle}</div>
