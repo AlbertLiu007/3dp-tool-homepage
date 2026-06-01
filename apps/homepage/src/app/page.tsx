@@ -11,6 +11,7 @@ function ToolCard({
   description,
   button,
   href,
+  eventName,
   icon,
   disabled = false,
   tag,
@@ -20,6 +21,7 @@ function ToolCard({
   description: string;
   button?: string;
   href?: string;
+  eventName?: string;
   icon: React.ReactNode;
   disabled?: boolean;
   tag?: string;
@@ -48,7 +50,7 @@ function ToolCard({
 
   if (disabled || !href) return content;
   return (
-    <Link href={href} className="block h-full">
+    <Link href={href} className="block h-full" data-umami-event={eventName}>
       {content}
     </Link>
   );
@@ -148,8 +150,8 @@ export default function HomePage() {
       <section className="mx-auto max-w-[1480px] px-5 py-6">
         <SectionHeading title={t.toolsTitle} description={t.toolsDescription} />
         <div className="grid gap-4 md:grid-cols-2">
-          <ToolCard title={t.quoteToolTitle} description={t.quoteToolDescription} button={t.quoteToolButton} href="/quote" icon={<Calculator className="h-6 w-6" />} tag={t.online} />
-          <ToolCard title={t.converterToolTitle} description={t.converterToolDescription} button={t.converterToolButton} href="/converter" icon={<FileSymlink className="h-6 w-6" />} tag={t.online} />
+          <ToolCard title={t.quoteToolTitle} description={t.quoteToolDescription} button={t.quoteToolButton} href="/quote" eventName="home_quote_card_click" icon={<Calculator className="h-6 w-6" />} tag={t.online} />
+          <ToolCard title={t.converterToolTitle} description={t.converterToolDescription} button={t.converterToolButton} href="/converter" eventName="home_converter_card_click" icon={<FileSymlink className="h-6 w-6" />} tag={t.online} />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <ToolCard title={t.repairTitle} description={t.repairDescription} icon={<Wrench className="h-6 w-6" />} disabled tag={t.comingSoon} tagTone="soon" />
@@ -211,7 +213,7 @@ export default function HomePage() {
               <h2 className="text-2xl font-black leading-9">{t.ctaTitle}</h2>
               <p className="mt-2 text-sm font-bold text-cyan-50">{t.ctaSubtitle}</p>
             </div>
-            <Link href="/quote" className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-white px-5 text-sm font-black text-[#0b4f9c] shadow-sm transition hover:bg-cyan-50">
+            <Link href="/quote" data-umami-event="home_cta_quote_click" className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-white px-5 text-sm font-black text-[#0b4f9c] shadow-sm transition hover:bg-cyan-50">
               <Rocket className="h-5 w-5" />
               {t.ctaButton}
             </Link>
