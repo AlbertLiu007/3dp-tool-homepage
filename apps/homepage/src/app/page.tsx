@@ -220,6 +220,16 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <footer className="border-t border-slate-200 bg-white px-5 py-5">
+        <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500">
+          <span>© UnionAM</span>
+          <span className="text-slate-300">|</span>
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">
+            沪ICP备17023219号-18
+          </a>
+        </div>
+      </footer>
     </main>
   );
 }
