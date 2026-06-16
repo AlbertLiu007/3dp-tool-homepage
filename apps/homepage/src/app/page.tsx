@@ -228,6 +228,10 @@ export default function HomePage() {
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">
             沪ICP备17023219号-18
           </a>
+          <span className="text-slate-300">|</span>
+          <a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">
+            沪公网安备31011702891863号
+          </a>
         </div>
       </footer>
     </main>
