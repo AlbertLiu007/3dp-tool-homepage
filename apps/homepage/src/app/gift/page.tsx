@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { ToolHeader } from '@unionam/shared-ui';
+import { WeComQrLogin } from '@/components/gift/wecom-qr-login';
 import { GiftModelModal, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
 import { useLanguage } from '@/lib/i18n/use-language';
 
@@ -56,6 +57,15 @@ const copy = {
     authStateError: '登录请求已失效，请重新扫码登录。',
     authLoginError: '企业微信登录失败，请稍后重试或联系系统管理员。',
     loginStarting: '正在打开企业微信登录…',
+    qrLoading: '正在加载企业微信登录二维码…',
+    qrFailed: '二维码加载失败',
+    qrFailedHint: '请检查网络后重新加载，或使用下方备用入口。',
+    qrRetry: '重新加载',
+    qrScanHint: '请使用手机企业微信“扫一扫”登录',
+    qrSecureHint: '二维码由企业微信官方提供，扫码后将在手机端确认登录。',
+    qrOpenOfficial: '在企业微信官方页面登录',
+    mobileLoginTitle: '在当前设备继续登录',
+    mobileLoginHint: '移动端无法扫描当前屏幕，请打开企业微信官方授权页完成身份确认。',
     secureTitle: '客户礼赠与业务打印，一站申请',
     secureDescription: '员工身份由企业微信统一认证，客户礼品、展会样品和业务样件在一个平台留痕管理。',
     hello: '你好',
@@ -145,6 +155,15 @@ const copy = {
     authStateError: 'This sign-in request has expired. Please scan again.',
     authLoginError: 'WeCom sign-in failed. Try again later or contact the system administrator.',
     loginStarting: 'Opening WeCom sign-in…',
+    qrLoading: 'Loading the official WeCom QR code…',
+    qrFailed: 'QR code failed to load',
+    qrFailedHint: 'Check your connection and reload, or use the fallback link below.',
+    qrRetry: 'Reload',
+    qrScanHint: 'Scan with WeCom on your phone to sign in',
+    qrSecureHint: 'This QR code is provided by WeCom. Confirm the sign-in on your phone after scanning.',
+    qrOpenOfficial: 'Open official WeCom sign-in',
+    mobileLoginTitle: 'Continue on this device',
+    mobileLoginHint: 'A phone cannot scan its own screen. Open the official WeCom authorization page to continue.',
     secureTitle: 'One workflow for gifts and business printing',
     secureDescription: 'WeCom verifies employees while customer gifts, exhibition samples, and business parts are tracked in one place.',
     hello: 'Welcome',
@@ -410,6 +429,7 @@ const studioCopy = {
 
 function LoginGate({
   t,
+  language,
   onLogin,
   onDevLogin,
   showDevLogin,
@@ -417,6 +437,7 @@ function LoginGate({
   errorCode,
 }: {
   t: GiftCopy;
+  language: GiftLanguage;
   onLogin: () => void;
   onDevLogin: () => void;
   showDevLogin: boolean;
@@ -465,28 +486,23 @@ function LoginGate({
             </div>
             <p className="mt-6 text-sm font-medium leading-6 text-slate-500">{t.loginDescription}</p>
 
-            <div className="mt-6 rounded-lg border border-cyan-100 bg-cyan-50/70 p-5 text-center">
-              <div className="mx-auto grid h-36 w-36 grid-cols-7 gap-1 rounded-md bg-white p-3 shadow-sm" aria-label={t.loginTitle}>
-                {Array.from({ length: 49 }, (_, index) => {
-                  const filled = (index * 17 + index * index) % 7 < 3 || [0, 1, 2, 7, 9, 14, 16, 21, 35, 36, 37, 42, 44, 47, 48].includes(index);
-                  return <span key={index} className={`rounded-[1px] ${filled ? 'bg-slate-900' : 'bg-slate-100'}`} />;
-                })}
-              </div>
-              <p className="mt-4 text-xs font-medium leading-5 text-slate-500">{t.localHint}</p>
-            </div>
-
             {errorMessage ? <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700">{errorMessage}</div> : null}
-
-            <button
-              type="button"
-              onClick={onLogin}
-              disabled={loginPending}
-              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-wait disabled:opacity-70"
-              data-umami-event="gift_wecom_login_click"
-            >
-              <QrCode className="h-5 w-5" />
-              {loginPending ? t.loginStarting : t.loginButton}
-            </button>
+            <WeComQrLogin
+              language={language}
+              loginPending={loginPending}
+              onOpenOfficial={onLogin}
+              labels={{
+                loading: t.qrLoading,
+                failed: t.qrFailed,
+                failedHint: t.qrFailedHint,
+                retry: t.qrRetry,
+                scanHint: t.qrScanHint,
+                secureHint: t.qrSecureHint,
+                openOfficial: loginPending ? t.loginStarting : t.qrOpenOfficial,
+                mobileTitle: t.mobileLoginTitle,
+                mobileHint: t.mobileLoginHint,
+              }}
+            />
             {showDevLogin ? (
               <button
                 type="button"
@@ -498,7 +514,6 @@ function LoginGate({
                 {t.localLogin}
               </button>
             ) : null}
-            <p className="mt-4 text-center text-[11px] font-medium leading-5 text-slate-400">{t.localHint}</p>
           </div>
         </div>
       </div>
@@ -1354,6 +1369,7 @@ export default function GiftPage() {
       {authStatus === 'guest' ? (
         <LoginGate
           t={t}
+          language={giftLanguage}
           onLogin={startWeComLogin}
           onDevLogin={startDevelopmentLogin}
           showDevLogin={process.env.NODE_ENV !== 'production'}
