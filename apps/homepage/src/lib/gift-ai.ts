@@ -45,7 +45,7 @@ export class GiftAiError extends Error {
   constructor(
     message: string,
     readonly status = 502,
-    readonly reason: 'configuration' | 'validation' | 'upstream' = 'upstream',
+    readonly reason: 'configuration' | 'validation' | 'upstream' | 'authentication' | 'approval' | 'quota' = 'upstream',
   ) {
     super(message);
     this.name = 'GiftAiError';
@@ -60,6 +60,34 @@ function requiredEnvironmentVariable(name: string) {
 
 function normalizedBaseUrl(value: string) {
   return value.replace(/\/+$/, '');
+}
+
+const TRANSIENT_UPSTREAM_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function retryDelay(response: Response | undefined, attempt: number) {
+  const retryAfter = Number(response?.headers.get('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 5000);
+  return 700 * (2 ** attempt);
+}
+
+async function fetchImageProvider(input: string, initFactory: () => RequestInit) {
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: Response | undefined;
+    try {
+      response = await fetch(input, initFactory());
+      if (!TRANSIENT_UPSTREAM_STATUSES.has(response.status) || attempt === maxAttempts - 1) return response;
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts - 1) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, retryDelay(response, attempt)));
+  }
+  throw new GiftAiError(
+    lastError instanceof Error ? `Image provider connection failed: ${lastError.message}` : 'Image provider connection failed after automatic retries.',
+  );
 }
 
 function imageConfiguration() {
@@ -117,7 +145,7 @@ async function normalizeImage(payload: ImageApiResponse): Promise<GeneratedGiftI
 
 async function requestGeneratedImage(prompt: string) {
   const configuration = imageConfiguration();
-  const response = await fetch(`${configuration.baseUrl}/images/generations`, {
+  const response = await fetchImageProvider(`${configuration.baseUrl}/images/generations`, () => ({
     method: 'POST',
     cache: 'no-store',
     headers: {
@@ -132,7 +160,7 @@ async function requestGeneratedImage(prompt: string) {
       quality: configuration.quality,
       n: 1,
     }),
-  });
+  }));
   return normalizeImage(await readJsonResponse<ImageApiResponse>(response));
 }
 
@@ -143,15 +171,15 @@ export async function generateGiftImages(prompt: string, count = 3) {
 
 export async function editGiftImage(input: { image: File; mask?: File; prompt: string }) {
   const configuration = imageConfiguration();
-  const formData = new FormData();
-  formData.set('model', configuration.model);
-  formData.set('prompt', input.prompt);
-  formData.set('size', configuration.size);
-  formData.set('quality', configuration.quality);
-  formData.set('image', input.image, input.image.name || 'gift-render.png');
-  if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
-
-  const response = await fetch(`${configuration.baseUrl}/images/edits`, {
+  const response = await fetchImageProvider(`${configuration.baseUrl}/images/edits`, () => {
+    const formData = new FormData();
+    formData.set('model', configuration.model);
+    formData.set('prompt', input.prompt);
+    formData.set('size', configuration.size);
+    formData.set('quality', configuration.quality);
+    formData.set('image', input.image, input.image.name || 'gift-render.png');
+    if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
+    return {
     method: 'POST',
     cache: 'no-store',
     headers: {
@@ -159,6 +187,7 @@ export async function editGiftImage(input: { image: File; mask?: File; prompt: s
       Accept: 'application/json',
     },
     body: formData,
+    };
   });
   return normalizeImage(await readJsonResponse<ImageApiResponse>(response));
 }
@@ -210,8 +239,6 @@ export async function queryWhiteModel(id: string): Promise<WhiteModelQuery> {
   });
   const payload = await readJsonResponse<HunyuanQueryResponse>(response);
   const status = normalizeHunyuanStatus(payload.status);
-  if (status === 'failed') throw new GiftAiError(payload.error_message || payload.error?.message || 'Hunyuan model generation failed.');
-
   return {
     status,
     models: (payload.data || []).flatMap((item) => item.type && item.url ? [{

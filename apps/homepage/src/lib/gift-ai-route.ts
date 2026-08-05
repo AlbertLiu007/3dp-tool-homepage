@@ -1,13 +1,45 @@
 import { NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAiError } from '@/lib/gift-ai';
+import {
+  GiftAccessError,
+  requireGiftEmployeeAccess,
+  reserveGiftAiUsage,
+  settleGiftAiUsage,
+  type GiftAiUsageType,
+} from '@/lib/gift-db';
 
-export function requireGiftEmployee() {
+export async function requireGiftEmployee(options: { approved?: boolean } = {}) {
   const session = getGiftSession();
-  if (!session) throw new GiftAiError('Authentication required.', 401, 'validation');
+  if (!session) throw new GiftAiError('Authentication required.', 401, 'authentication');
+  await requireGiftEmployeeAccess(session, { approved: options.approved });
   return session;
 }
+
+export function giftAiIdempotencyKey(request: Request) {
+  return request.headers.get('Idempotency-Key')?.trim() || undefined;
+}
+
+export async function withGiftAiUsage<T>(session: Awaited<ReturnType<typeof requireGiftEmployee>>, usageType: GiftAiUsageType, operation: () => Promise<T>, requestId?: string, metadata?: { provider?: string; model?: string }) {
+  const reservation = await reserveGiftAiUsage(session, usageType, requestId, metadata);
+  try {
+    const result = await operation();
+    await settleGiftAiUsage(reservation.requestId, 'succeeded');
+    return result;
+  } catch (error) {
+    await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => {
+      console.error('Unable to refund failed gift AI usage:', settleError);
+    });
+    throw error;
+  }
+}
 export function giftAiErrorResponse(error: unknown) {
+  if (error instanceof GiftAccessError) {
+    return NextResponse.json(
+      { error: error.code, message: error.message },
+      { status: error.status, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   if (error instanceof GiftAiError) {
     return NextResponse.json(
       { error: error.reason, message: error.message },

@@ -14,7 +14,9 @@ import {
   CircleUserRound,
   Clock3,
   Cpu,
+  Download,
   Factory,
+  FileText,
   Gift,
   ImagePlus,
   Landmark,
@@ -25,6 +27,7 @@ import {
   Palette,
   PackageCheck,
   QrCode,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -50,7 +53,7 @@ const copy = {
     loginButton: '企业微信扫码登录',
     loginHint: '仅限联泰科技在职员工使用',
     localLogin: '本地开发：模拟登录',
-    localHint: '点击下方按钮打开企业微信官方登录二维码。',
+    localHint: '本地开发环境可跳过企业微信扫码，直接使用已审核的测试员工身份进入。',
     authLoading: '正在验证企业微信员工身份…',
     authConfigError: '企业微信应用尚未配置完成，请联系系统管理员。',
     authNotEmployee: '当前账号不是可用的联泰在职员工账号，无法进入礼品站。',
@@ -138,6 +141,18 @@ const copy = {
     statusPending: '待审核',
     statusPrinting: '打印中',
     statusReady: '待领取',
+    aiPendingTitle: 'AI 生成功能正在等待审核',
+    aiPendingDescription: '你已完成企业员工身份验证。运营管理员批准后，即可使用礼品渲染图、图片编辑和 3D 模型生成服务；礼品库仍可正常浏览和申请。',
+    aiRejectedTitle: 'AI 生成权限申请未通过',
+    aiRejectedDescription: '你仍可浏览礼品库和提交已有模型的打印申请。如需重新开通，请联系礼品站运营管理员。',
+    aiSuspendedTitle: 'AI 生成权限已暂停',
+    aiSuspendedDescription: '生成接口暂不可用，礼品库浏览不受影响。请联系礼品站运营管理员了解原因。',
+    aiApplicationLabel: '申请用途',
+    aiApplicationPlaceholder: '例如：用于销售团队客户礼赠，需要根据客户行业生成专属摆件。',
+    aiApplicationButton: '提交 AI 使用申请',
+    aiApplicationSaving: '正在提交…',
+    aiApplicationSubmitted: '申请用途已提交，运营管理员将在后台审核。',
+    quotaToday: '今日额度',
     allLocal: '平台仅对企业内部开放，客户礼品、展会样品、业务样件等打印申请统一留痕管理。',
   },
   en: {
@@ -148,7 +163,7 @@ const copy = {
     loginButton: 'Sign in with WeCom',
     loginHint: 'For active UnionTech employees only',
     localLogin: 'Local development: simulate sign-in',
-    localHint: 'Use the button below to open the official WeCom sign-in QR code.',
+    localHint: 'In local development, skip WeCom and enter with an approved test employee.',
     authLoading: 'Verifying your UnionTech employee identity…',
     authConfigError: 'WeCom sign-in has not been configured. Contact the system administrator.',
     authNotEmployee: 'This account is not an active UnionTech employee account and cannot access the gift station.',
@@ -236,6 +251,18 @@ const copy = {
     statusPending: 'Pending review',
     statusPrinting: 'Printing',
     statusReady: 'Ready for pickup',
+    aiPendingTitle: 'AI generation is awaiting approval',
+    aiPendingDescription: 'Your employee identity is verified. Once an operator approves access, you can generate renders, edit images, and create 3D models. The gift library remains available.',
+    aiRejectedTitle: 'AI access was not approved',
+    aiRejectedDescription: 'You can still browse the gift library and submit print requests for existing models. Contact a gift station operator to request access again.',
+    aiSuspendedTitle: 'AI generation access is suspended',
+    aiSuspendedDescription: 'Generation services are currently unavailable, while library browsing remains available. Contact a gift station operator for details.',
+    aiApplicationLabel: 'Application reason',
+    aiApplicationPlaceholder: 'Example: customer gifting for the sales team, requiring customer-specific desk sculptures.',
+    aiApplicationButton: 'Submit AI access request',
+    aiApplicationSaving: 'Submitting…',
+    aiApplicationSubmitted: 'Your application has been submitted for operator review.',
+    quotaToday: 'Today’s quota',
     allLocal: 'For internal employees only. Customer gifts, exhibition samples, and business print requests are tracked with access control.',
   },
 } as const;
@@ -243,16 +270,19 @@ const copy = {
 type GiftCopy = (typeof copy)[GiftLanguage];
 
 type GiftModel = {
-  id: string;
+  id: string | number;
   name: string;
   description: string;
-  category: 'business' | 'culture' | 'technology' | 'custom';
+  category: string;
   categoryLabel: string;
   useCase: string;
   finishLabel: string;
   finish: 'paint' | 'bronze' | 'both';
   color: string;
   accent: string;
+  modelAssetId?: number | null;
+  previewAssetId?: number | null;
+  generatedModelUrl?: string;
 };
 
 const modelCatalog: Record<GiftLanguage, GiftModel[]> = {
@@ -300,7 +330,19 @@ const studioCopy = {
     oneImageHint: '支持 JPG、PNG、WebP；建议主体完整、背景简洁',
     replaceImage: '更换图片',
     imageCompressing: '图片超过 5MB，正在自动压缩…',
-    imageCompressed: '图片已自动压缩，可以开始生成模型。',
+    imagePreparingWhite: '正在识别主体并生成纯白背景建模图…',
+    imagePrepared: '白底建模图已生成，请确认主体与底座完整。',
+    imagePreparationFailed: '白底处理失败，请重试或更换背景更简洁的图片。',
+    imageOriginal: '原图',
+    imagePreparedView: '白底建模图',
+    imagePaintView: '喷漆效果',
+    imageRetryPreparation: '重新处理白底',
+    imagePaintPreviewTitle: '单色喷漆效果预览',
+    imagePaintPreviewHint: '颜色只用于效果预览和生产工艺，不会写入白模 STL。',
+    generatePaintPreview: '生成单色喷漆预览',
+    generatingPaintPreview: '正在生成喷漆预览…',
+    paintPreviewReady: '喷漆效果已生成，可切换左侧查看。',
+    imageCompressed: '图片已自动压缩。',
     imageCompressionFailed: '图片压缩失败，请选择小于 5MB 的 JPG、PNG 或 WebP 图片。',
     imageTooLarge: '图片超过 5MB，无法提交，请更换图片。',
     imageModelRule: '系统将提取主体造型并生成可打印白膜模型，不会把图片颜色写入模型。',
@@ -342,6 +384,8 @@ const studioCopy = {
     modelQueued: '白膜模型任务已提交，正在生成…',
     downloadModel: '下载 STL 模型',
     aiConfigError: 'AI 服务密钥尚未配置，请联系管理员完成环境变量配置。',
+    aiApprovalError: '你的 AI 使用权限尚未通过审核或已暂停。',
+    aiQuotaError: '当前额度已用完或已有生成任务正在运行，请稍后再试。',
     aiRequestError: 'AI 服务暂时不可用，请稍后重试。',
     orders: '我的申请',
     newRequest: '已有自己的模型？提交展会或业务样件申请',
@@ -375,7 +419,19 @@ const studioCopy = {
     oneImageHint: 'JPG, PNG, or WebP; use a complete subject and simple background',
     replaceImage: 'Replace image',
     imageCompressing: 'This image exceeds 5MB and is being compressed…',
-    imageCompressed: 'The image was compressed and is ready for 3D generation.',
+    imagePreparingWhite: 'Isolating the subject and creating a pure-white 3D input…',
+    imagePrepared: 'The white-background input is ready. Confirm the complete subject and base.',
+    imagePreparationFailed: 'White-background preparation failed. Retry or use an image with a simpler background.',
+    imageOriginal: 'Original',
+    imagePreparedView: 'White 3D input',
+    imagePaintView: 'Paint preview',
+    imageRetryPreparation: 'Retry background cleanup',
+    imagePaintPreviewTitle: 'Monochrome paint preview',
+    imagePaintPreviewHint: 'Paint is for preview and production instructions only. It is never embedded in the white STL.',
+    generatePaintPreview: 'Generate paint preview',
+    generatingPaintPreview: 'Generating paint preview…',
+    paintPreviewReady: 'The paint preview is ready. Switch the image view on the left.',
+    imageCompressed: 'The image was compressed.',
     imageCompressionFailed: 'Image compression failed. Choose a JPG, PNG, or WebP image smaller than 5MB.',
     imageTooLarge: 'This image still exceeds 5MB and cannot be submitted.',
     imageModelRule: 'The subject shape becomes a printable white model. Image colors are not embedded in the model.',
@@ -417,6 +473,8 @@ const studioCopy = {
     modelQueued: 'White model job submitted and generating…',
     downloadModel: 'Download STL model',
     aiConfigError: 'AI service credentials are not configured. Contact the administrator.',
+    aiApprovalError: 'Your AI access is awaiting approval or has been suspended.',
+    aiQuotaError: 'Your quota is exhausted or another generation job is already running.',
     aiRequestError: 'The AI service is temporarily unavailable. Try again later.',
     orders: 'My requests',
     newRequest: 'Already have a model? Submit an exhibition or business sample request',
@@ -487,6 +545,20 @@ function LoginGate({
             <p className="mt-6 text-sm font-medium leading-6 text-slate-500">{t.loginDescription}</p>
 
             {errorMessage ? <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700">{errorMessage}</div> : null}
+            {showDevLogin ? (
+              <div className="mt-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3">
+                <p className="text-xs font-medium leading-5 text-cyan-900">{t.localHint}</p>
+                <button
+                  type="button"
+                  onClick={onDevLogin}
+                  disabled={loginPending}
+                  className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-[#0b4f9c] px-4 py-2.5 text-xs font-black text-white transition hover:bg-[#083f7e] disabled:cursor-wait disabled:opacity-70"
+                  data-umami-event="gift_local_login_click"
+                >
+                  {loginPending ? t.authLoading : t.localLogin}
+                </button>
+              </div>
+            ) : null}
             <WeComQrLogin
               language={language}
               loginPending={loginPending}
@@ -503,17 +575,6 @@ function LoginGate({
                 mobileHint: t.mobileLoginHint,
               }}
             />
-            {showDevLogin ? (
-              <button
-                type="button"
-                onClick={onDevLogin}
-                disabled={loginPending}
-                className="mt-3 inline-flex w-full items-center justify-center rounded-md border border-cyan-200 bg-cyan-50 px-4 py-2.5 text-xs font-black text-[#0b4f9c] transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-70"
-                data-umami-event="gift_local_login_click"
-              >
-                {t.localLogin}
-              </button>
-            ) : null}
           </div>
         </div>
       </div>
@@ -522,6 +583,14 @@ function LoginGate({
 }
 
 function GiftModelVisual({ model }: { model: GiftModel }) {
+  if (model.previewAssetId) {
+    return (
+      <div className="relative grid h-52 place-items-center overflow-hidden bg-slate-50 p-4">
+        <img src={`/api/gift/assets/${model.previewAssetId}`} alt={model.name} className="h-full w-full object-contain" />
+        <span className="absolute left-4 top-4 rounded-md border border-white/80 bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#0b4f9c] shadow-sm">{model.categoryLabel}</span>
+      </div>
+    );
+  }
   const Icon = model.category === 'business'
     ? Building2
     : model.category === 'culture'
@@ -586,10 +655,45 @@ function ModelCard({
 
 function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: GiftCopy; onClose: () => void; onSubmitted: () => void }) {
   const [submitted, setSubmitted] = useState(false);
+  const [quantity, setQuantity] = useState(1);
+  const [notes, setNotes] = useState('');
+  const [customerCompany, setCustomerCompany] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [finishType, setFinishType] = useState<'white' | 'paint' | 'bronze'>(model.finish === 'bronze' ? 'bronze' : 'paint');
+  const [paintColor, setPaintColor] = useState('#0B77B7');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [requestNo, setRequestNo] = useState('');
 
-  function submit() {
-    setSubmitted(true);
-    onSubmitted();
+  async function submit() {
+    setSaving(true); setError('');
+    try {
+      const requestType = typeof model.id === 'number' ? 'catalog_gift' : 'ai_gift';
+      const response = await fetch('/api/gift/requests', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType, modelId: typeof model.id === 'number' ? model.id : null, title: model.name,
+          customerCompany, businessScene: model.useCase, quantity, finishType,
+          paintColor: finishType === 'paint' ? paintColor : null, requestedCompletionDate: deadline || null,
+          pickupLocation: t.pickupValue, requestNotes: notes,
+          specifications: { source: requestType, generatedModelUrl: model.generatedModelUrl || null },
+        }),
+      });
+      const result = await response.json() as { id?: number; requestNo?: string; message?: string };
+      if (!response.ok || !result.id) throw new Error(result.message || '申请提交失败');
+      if (model.generatedModelUrl) {
+        const modelResponse = await fetch(model.generatedModelUrl);
+        if (!modelResponse.ok) throw new Error('申请已创建，但生成模型附件读取失败，请在“我的申请”中补充上传。');
+        const formData = new FormData();
+        formData.set('file', new File([await modelResponse.blob()], `${String(model.id)}.glb`, { type: 'model/gltf-binary' }));
+        formData.set('role', 'source_model');
+        const uploadResponse = await fetch(`/api/gift/requests/${result.id}/attachments`, { method: 'POST', credentials: 'same-origin', body: formData });
+        if (!uploadResponse.ok) throw new Error('申请已创建，但模型附件上传失败，请在“我的申请”中补充上传。');
+      }
+      setRequestNo(result.requestNo || ''); setSubmitted(true); onSubmitted();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : '申请提交失败');
+    } finally { setSaving(false); }
   }
 
   return (
@@ -608,16 +712,20 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
           <div className="p-8 text-center">
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-7 w-7" /></div>
             <h3 className="mt-5 text-xl font-black text-slate-950">{t.orderSuccess}</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm font-medium leading-6 text-slate-500">{t.orderSuccessHint}</p>
+            <p className="mx-auto mt-2 max-w-sm text-sm font-medium leading-6 text-slate-500">{t.orderSuccessHint}{requestNo ? `（${requestNo}）` : ''}</p>
             <button type="button" onClick={onClose} className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white">{t.cancel}</button>
           </div>
         ) : (
           <div className="space-y-5 p-6">
             <p className="rounded-md border border-cyan-100 bg-cyan-50 px-4 py-3 text-xs font-bold leading-5 text-cyan-900">{t.orderModalHint}</p>
-            <label className="block text-sm font-black text-slate-700">{t.quantity}<input type="number" min="1" defaultValue="1" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+            <label className="block text-sm font-black text-slate-700">{t.quantity}<input type="number" min="1" max="10000" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+            <label className="block text-sm font-black text-slate-700">客户或业务项目<input value={customerCompany} onChange={(event) => setCustomerCompany(event.target.value)} maxLength={255} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500" placeholder="选填，便于运营人员识别用途" /></label>
+            <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-black text-slate-700">成品工艺<select value={finishType} onChange={(event) => setFinishType(event.target.value as 'white' | 'paint' | 'bronze')} className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="white">白膜</option>{model.finish !== 'bronze' ? <option value="paint">单色喷漆</option> : null}{model.finish !== 'paint' ? <option value="bronze">铜做旧</option> : null}</select></label>{finishType === 'paint' ? <label className="block text-sm font-black text-slate-700">喷漆颜色<div className="mt-2 flex h-11 items-center gap-3 rounded-md border border-slate-200 px-3"><input type="color" value={paintColor} onChange={(event) => setPaintColor(event.target.value.toUpperCase())} /><span className="font-mono text-xs">{paintColor}</span></div></label> : <label className="block text-sm font-black text-slate-700">期望完成日期<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label>}</div>
+            {finishType === 'paint' ? <label className="block text-sm font-black text-slate-700">期望完成日期<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label> : null}
             <div className="rounded-md border border-slate-200 px-4 py-3"><div className="text-xs font-black text-slate-500">{t.pickup}</div><div className="mt-1 text-sm font-bold text-slate-900">{t.pickupValue}</div></div>
-            <label className="block text-sm font-black text-slate-700">{t.note}<textarea rows={3} placeholder={t.notePlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
-            <button type="button" onClick={submit} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e]" data-umami-event="gift_order_submit_click"><PackageCheck className="h-5 w-5" />{t.submitOrder}</button>
+            <label className="block text-sm font-black text-slate-700">{t.note}<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={5000} placeholder={t.notePlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+            {error ? <p className="rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}
+            <button type="button" disabled={saving || quantity < 1} onClick={() => void submit()} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:opacity-50" data-umami-event="gift_order_submit_click">{saving ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <PackageCheck className="h-5 w-5" />}{t.submitOrder}</button>
           </div>
         )}
       </div>
@@ -628,6 +736,7 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
 type AiCreationMode = 'image' | 'brief';
 type FinishMode = 'paint' | 'bronze';
 type ImageModelStatus = 'idle' | 'generating' | 'ready';
+type ImageInputView = 'original' | 'prepared' | 'paint';
 type BriefStatus = 'idle' | 'generating-render' | 'render-ready' | 'generating-model' | 'model-ready';
 
 const paintColorPresets = [
@@ -870,14 +979,29 @@ function renderPrompt(language: GiftLanguage, brief: string, tags: string[], fin
   return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, 3D-printable desk gift as a product render. ${finishText}. Plain white or light-gray background. One centered object occupying more than 70% of the image. Stable base, closed solid form, clear silhouette, manufacturable thickness, no thin floating structures, no packaging, no hands, no text, no logo, no watermark. Three-quarter front view. The shape must be suitable for image-to-3D generation and resin 3D printing.`;
 }
 
+function whiteBackgroundPrompt() {
+  return 'Remove the entire background, background text, watermark-like marks, props, and unrelated elements. Preserve the exact subject geometry, pose, silhouette, proportions, camera angle, and complete supporting base. Keep every part that physically belongs to the sculpture or gift. Center the complete isolated subject on a pure white #FFFFFF background. Use clean, sharp edges and a subtle natural contact shadow only. Do not add, remove, redesign, crop, or recolor any part of the subject.';
+}
+
+function monochromePaintPrompt(paintColor: string) {
+  return `Re-render the complete isolated subject in exactly one uniform matte spray paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. Remove original surface colors, patterns, text, and material variation while preserving only natural light and form-defining shadows. No gradients, color blocking, accent colors, metallic parts, or secondary materials. Keep the pure white #FFFFFF background. Do not add, remove, crop, or redesign any geometry.`;
+}
+
 function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: (model: GiftModel) => void }) {
   const labels = studioCopy[language];
   const [mode, setMode] = useState<AiCreationMode>('image');
+  const [imageOriginalFile, setImageOriginalFile] = useState<File | null>(null);
+  const [imageOriginalUrl, setImageOriginalUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageView, setImageView] = useState<ImageInputView>('original');
+  const [imagePreparationFailed, setImagePreparationFailed] = useState(false);
+  const [imagePaintPreview, setImagePaintPreview] = useState<string | null>(null);
+  const [imagePaintGenerating, setImagePaintGenerating] = useState(false);
   const [imagePreparing, setImagePreparing] = useState(false);
   const [imagePreparationNotice, setImagePreparationNotice] = useState<string | null>(null);
   const imagePreparationIdRef = useRef(0);
+  const imagePaintIdRef = useRef(0);
   const [imageStatus, setImageStatus] = useState<ImageModelStatus>('idle');
   const [imageModel, setImageModel] = useState<GeneratedGiftModel>();
   const [brief, setBrief] = useState('');
@@ -905,6 +1029,10 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
   }, [imageUrl]);
+
+  useEffect(() => () => {
+    if (imageOriginalUrl) URL.revokeObjectURL(imageOriginalUrl);
+  }, [imageOriginalUrl]);
 
   useEffect(() => {
     if (!paintMenuOpen) return;
@@ -947,30 +1075,100 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     setEditNotice(false);
   }
 
+  async function requestImageEdit(file: File, prompt: string, outputName: string) {
+    const formData = new FormData();
+    formData.set('image', file, file.name || 'gift-reference.png');
+    formData.set('prompt', prompt);
+    const response = await fetch('/api/gift/ai/edit', {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
+    if (!response.ok) throw await apiErrorMessage(response);
+    const payload = await response.json() as { image?: GiftImageResult };
+    const source = giftImageSource(payload.image);
+    if (!source) throw { configuration: false, message: 'Image service did not return an edited image.' } satisfies GiftAiClientError;
+    return { source, file: await imageSourceToFile(source, outputName) };
+  }
+
+  async function prepareImageForModel(sourceFile: File, preparationId: number) {
+    imagePaintIdRef.current += 1;
+    setImagePaintPreview(null);
+    setImagePaintGenerating(false);
+    setImagePreparing(true);
+    setImagePreparationFailed(false);
+    setImagePreparationNotice(labels.imagePreparingWhite);
+    try {
+      const compressedSource = await compressModelImage(sourceFile);
+      if (imagePreparationIdRef.current !== preparationId) return;
+      setImageOriginalFile(compressedSource.file);
+      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-white-background.png');
+      if (imagePreparationIdRef.current !== preparationId) return;
+      const prepared = await compressModelImage(edited.file);
+      if (imagePreparationIdRef.current !== preparationId) return;
+      setImageFile(prepared.file);
+      setImageUrl(prepared.compressed ? URL.createObjectURL(prepared.file) : edited.source);
+      setImageView('prepared');
+      setImagePreparationNotice(labels.imagePrepared);
+    } catch (error) {
+      if (imagePreparationIdRef.current !== preparationId) return;
+      setImageFile(null);
+      setImageUrl(null);
+      setImageView('original');
+      setImagePreparationFailed(true);
+      setImagePreparationNotice(labels.imagePreparationFailed);
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+    } finally {
+      if (imagePreparationIdRef.current === preparationId) setImagePreparing(false);
+    }
+  }
+
   async function chooseImage(file: File | undefined) {
     const preparationId = imagePreparationIdRef.current + 1;
     imagePreparationIdRef.current = preparationId;
+    setImageOriginalFile(file || null);
+    setImageOriginalUrl(file ? URL.createObjectURL(file) : null);
     setImageFile(null);
-    setImageUrl(file ? URL.createObjectURL(file) : null);
-    setImagePreparing(Boolean(file && file.size > MODEL_IMAGE_MAX_BYTES));
-    setImagePreparationNotice(file && file.size > MODEL_IMAGE_MAX_BYTES ? labels.imageCompressing : null);
+    setImageUrl(null);
+    setImageView('original');
+    setImagePreparationFailed(false);
+    setImagePaintPreview(null);
+    setImagePaintGenerating(false);
+    setImagePreparing(Boolean(file));
+    setImagePreparationNotice(file ? labels.imagePreparingWhite : null);
     setImageStatus('idle');
     setImageModel(undefined);
     clearAiError();
     if (!file) return;
+    await prepareImageForModel(file, preparationId);
+  }
+
+  async function retryImagePreparation() {
+    if (!imageOriginalFile || imagePreparing) return;
+    const preparationId = imagePreparationIdRef.current + 1;
+    imagePreparationIdRef.current = preparationId;
+    clearAiError();
+    await prepareImageForModel(imageOriginalFile, preparationId);
+  }
+
+  async function generateImagePaintPreview() {
+    if (!imageFile || imagePreparing || imagePaintGenerating) return;
+    const paintId = imagePaintIdRef.current + 1;
+    imagePaintIdRef.current = paintId;
+    clearAiError();
+    setImagePaintGenerating(true);
     try {
-      const prepared = await compressModelImage(file);
-      if (imagePreparationIdRef.current !== preparationId) return;
-      setImageFile(prepared.file);
-      if (prepared.compressed) setImageUrl(URL.createObjectURL(prepared.file));
-      setImagePreparationNotice(prepared.compressed ? labels.imageCompressed : null);
-    } catch {
-      if (imagePreparationIdRef.current !== preparationId) return;
-      setImageFile(null);
-      setImagePreparationNotice(null);
-      setAiError({ configuration: false, reason: 'validation', message: labels.imageCompressionFailed });
+      const edited = await requestImageEdit(imageFile, monochromePaintPrompt(paintColor), 'gift-paint-preview.png');
+      if (imagePaintIdRef.current !== paintId) return;
+      setImagePaintPreview(edited.source);
+      setImageView('paint');
+      setImagePreparationNotice(labels.paintPreviewReady);
+    } catch (error) {
+      if (imagePaintIdRef.current !== paintId) return;
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
     } finally {
-      if (imagePreparationIdRef.current === preparationId) setImagePreparing(false);
+      if (imagePaintIdRef.current === paintId) setImagePaintGenerating(false);
     }
   }
 
@@ -984,7 +1182,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     if (prepared.file.size > MODEL_IMAGE_MAX_BYTES) throw { configuration: false, reason: 'validation', message: labels.imageTooLarge } satisfies GiftAiClientError;
     const formData = new FormData();
     formData.set('image', prepared.file, prepared.file.name || 'gift-reference.webp');
-    const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin' });
+    const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
     if (!submitResponse.ok) {
       const error = await apiErrorMessage(submitResponse);
       if (error.reason === 'validation' && error.message?.includes('5MB')) error.message = labels.imageTooLarge;
@@ -1055,7 +1253,13 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     if (!/^#[0-9A-F]{6}$/.test(normalized)) return;
     setPaintColor(normalized);
     setPaintColorInput(normalized);
-    resetBriefResults();
+    imagePaintIdRef.current += 1;
+    setImagePaintGenerating(false);
+    setImagePaintPreview(null);
+    if (imageView === 'paint') setImageView(imageUrl ? 'prepared' : 'original');
+    if (imageFile) setImagePreparationNotice(labels.imagePrepared);
+    if (mode === 'brief') resetBriefResults();
+    else clearAiError();
   }
 
   async function generateRenders() {
@@ -1068,7 +1272,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
       const response = await fetch('/api/gift/ai/render', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({ prompt: renderPrompt(language, brief, selectedProfileTags, finish, paintColor) }),
       });
       if (!response.ok) throw await apiErrorMessage(response);
@@ -1096,7 +1300,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
         : 'Keep the restrained antique bronze material and subtle patina consistent across the gift.';
       formData.set('prompt', `${editPrompt.trim()}\n${finishConstraint}`);
       if (editMask) formData.set('mask', editMask);
-      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin' });
+      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
       if (!response.ok) throw await apiErrorMessage(response);
       const payload = await response.json() as { image?: GiftImageResult };
       if (!giftImageSource(payload.image)) throw { configuration: false, message: 'Image service did not return an edited image.' };
@@ -1140,14 +1344,63 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     accent: 'AI',
   };
 
+  const displayedImageSource = imageView === 'paint'
+    ? imagePaintPreview
+    : imageView === 'prepared'
+      ? imageUrl
+      : imageOriginalUrl;
+
   return (
     <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
       <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className={`flex items-start gap-4 p-5 text-left transition md:p-6 ${mode === 'image' ? 'bg-cyan-50/70 shadow-[inset_0_-3px_0_#0891b2]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'image' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" onClick={() => setMode('brief')} className={`flex items-start gap-4 border-t border-slate-200 p-5 text-left transition md:border-l md:border-t-0 md:p-6 ${mode === 'brief' ? 'bg-blue-50/70 shadow-[inset_0_-3px_0_#2563eb]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'brief' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
 
-      {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{aiError.reason !== 'validation' && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
+      {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'approval' ? labels.aiApprovalError : aiError.reason === 'quota' ? labels.aiQuotaError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{!['validation', 'approval', 'quota'].includes(aiError.reason || '') && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
 
-      {mode === 'image' ? <div className="p-6 md:p-8"><div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"><label className="group relative flex min-h-72 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-cyan-300 bg-cyan-50/40 p-5 text-center transition hover:border-cyan-500 hover:bg-cyan-50"><input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void chooseImage(file); }} />{imageUrl ? <img src={imageUrl} alt={labels.oneImage} className="absolute inset-0 h-full w-full bg-white object-contain" /> : null}<div className={`relative ${imageUrl ? 'absolute bottom-4 rounded-md bg-slate-950/70 px-4 py-2 text-white backdrop-blur' : ''}`}>{!imageUrl ? <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-white text-[#0b4f9c] shadow-sm"><UploadCloud className="h-7 w-7" /></div> : null}<span className={`block text-sm font-black ${imageUrl ? 'text-white' : 'mt-4 text-slate-800'}`}>{imageUrl ? labels.replaceImage : labels.oneImage}</span>{!imageUrl ? <span className="mt-2 block max-w-xs text-xs font-medium leading-5 text-slate-500">{labels.oneImageHint}</span> : null}</div></label><div className="self-center">{imagePreparationNotice ? <div className={`mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-bold ${imagePreparing ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{imagePreparing ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}{imagePreparationNotice}</div> : null}<div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5"><div className="flex items-start gap-3"><Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">Image → White 3D Model</h3><p className="mt-1 text-sm font-medium leading-6 text-slate-600">{labels.imageModelRule}</p></div></div></div><button type="button" onClick={generateImageModel} disabled={!imageFile || imagePreparing || imageStatus === 'generating'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_image_to_3d_click">{imagePreparing || imageStatus === 'generating' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{imagePreparing ? labels.imageCompressing : imageStatus === 'generating' ? labels.modelQueued : labels.generateWhiteModel}</button></div></div>{imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder(generatedModel)} /> : null}</div> : (
+      {mode === 'image' ? (
+        <div className="p-6 md:p-8">
+          <div className="grid gap-7 xl:grid-cols-[minmax(340px,0.9fr)_minmax(0,1.1fr)]">
+            <div>
+              {imageOriginalUrl ? <div className="mb-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => setImageView('original')} className={`rounded-md px-3 py-2 text-xs font-black transition ${imageView === 'original' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imageOriginal}</button>
+                <button type="button" disabled={!imageUrl} onClick={() => setImageView('prepared')} className={`rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${imageView === 'prepared' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imagePreparedView}</button>
+                <button type="button" disabled={!imagePaintPreview} onClick={() => setImageView('paint')} className={`rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${imageView === 'paint' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imagePaintView}</button>
+              </div> : null}
+              <label className="group relative flex min-h-[380px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-cyan-300 bg-cyan-50/40 p-5 text-center transition hover:border-cyan-500 hover:bg-cyan-50">
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void chooseImage(file); }} />
+                {displayedImageSource ? <img src={displayedImageSource} alt={labels.oneImage} className="absolute inset-0 h-full w-full bg-white object-contain" /> : null}
+                <div className={`relative ${displayedImageSource ? 'absolute bottom-4 rounded-md bg-slate-950/70 px-4 py-2 text-white backdrop-blur' : ''}`}>
+                  {!displayedImageSource ? <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-white text-[#0b4f9c] shadow-sm"><UploadCloud className="h-7 w-7" /></div> : null}
+                  <span className={`block text-sm font-black ${displayedImageSource ? 'text-white' : 'mt-4 text-slate-800'}`}>{displayedImageSource ? labels.replaceImage : labels.oneImage}</span>
+                  {!displayedImageSource ? <span className="mt-2 block max-w-xs text-xs font-medium leading-5 text-slate-500">{labels.oneImageHint}</span> : null}
+                </div>
+                {imagePreparing ? <div className="absolute inset-0 grid place-items-center bg-white/85 backdrop-blur-sm"><div className="flex flex-col items-center gap-3 text-sm font-black text-cyan-800"><LoaderCircle className="h-8 w-8 animate-spin" />{labels.imagePreparingWhite}</div></div> : null}
+              </label>
+            </div>
+
+            <div className="self-center">
+              {imagePreparationNotice ? <div className={`mb-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-bold ${imagePreparing ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : imagePreparationFailed ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                <span className="flex items-center gap-2">{imagePreparing ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" /> : imagePreparationFailed ? <X className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}{imagePreparationNotice}</span>
+                {imagePreparationFailed ? <button type="button" onClick={() => void retryImagePreparation()} className="shrink-0 underline underline-offset-2">{labels.imageRetryPreparation}</button> : null}
+              </div> : null}
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5">
+                <div className="flex items-start gap-3"><Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">Image → White 3D Model</h3><p className="mt-1 text-sm font-medium leading-6 text-slate-600">{labels.imageModelRule}</p></div></div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
+                <div className="flex items-start gap-3"><Palette className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">{labels.imagePaintPreviewTitle}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.imagePaintPreviewHint}</p></div></div>
+                <div className="mt-4 grid grid-cols-8 gap-2">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => choosePaintColor(preset.hex)} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-8 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div>
+                <div className="mt-3 flex items-center gap-2"><label className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-xs font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div>
+                <button type="button" onClick={() => void generateImagePaintPreview()} disabled={!imageFile || imagePreparing || imagePaintGenerating} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.generatingPaintPreview : labels.generatePaintPreview}</button>
+              </div>
+
+              <button type="button" onClick={generateImageModel} disabled={!imageFile || imagePreparing || imageStatus === 'generating'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_image_to_3d_click">{imagePreparing || imageStatus === 'generating' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{imagePreparing ? labels.imagePreparingWhite : imageStatus === 'generating' ? labels.modelQueued : labels.generateWhiteModel}</button>
+            </div>
+          </div>
+          {imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-image-${Date.now()}`, generatedModelUrl: imageModel?.modelUrl })} /> : null}
+        </div>
+      ) : (
         <div className="p-6 md:p-8">
           <div className="grid gap-7 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]"><div><label className="block text-sm font-black text-slate-700">{labels.customerBrief}<textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={5} placeholder={labels.customerBriefPlaceholder} className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium leading-6 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><div className="mt-6 flex flex-wrap items-end justify-between gap-2"><div className="text-sm font-black text-slate-700">{labels.profileTags}</div><div className="text-[11px] font-bold text-slate-400">{labels.profileAutoHint}</div></div><div ref={profileMenusRef} className="mt-3 grid gap-2 sm:grid-cols-2">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div></div><div><div className="text-sm font-black text-slate-700">{labels.renderFinish}</div><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div ref={paintMenuRef} className={`relative ${paintMenuOpen ? 'z-30' : ''}`}><button type="button" aria-expanded={paintMenuOpen} aria-haspopup="dialog" onClick={() => { const switchingToPaint = finish !== 'paint'; setFinish('paint'); setOpenProfileGroup(null); setPaintMenuOpen((current) => switchingToPaint || !current); if (switchingToPaint) resetBriefResults(); }} className={`h-full w-full rounded-xl border p-4 text-left transition ${finish === 'paint' ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:border-cyan-300'}`}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full shadow-inner" style={{ backgroundColor: paintColor }} />{labels.paint}</div><div className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-slate-500"><span>{paintColor}</span><ChevronDown className={`h-4 w-4 transition ${paintMenuOpen ? 'rotate-180' : ''}`} /></div></div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.paintHint}</p></button>{finish === 'paint' && paintMenuOpen ? <div role="dialog" aria-label={labels.paintColor} className="absolute left-0 top-[calc(100%+0.5rem)] w-full min-w-[280px] rounded-xl border border-cyan-200 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{labels.paintColor}</div><p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{labels.paintColorHint}</p></div><span className="h-8 w-8 shrink-0 rounded-full border-4 border-white shadow" style={{ backgroundColor: paintColor }} /></div><div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => { choosePaintColor(preset.hex); setPaintMenuOpen(false); }} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-7 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div><div className="mt-3 flex items-center gap-2"><label className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 font-mono text-[11px] font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div><p className="mt-2 text-[10px] font-bold leading-4 text-slate-400">{labels.paintColorRule}</p></div> : null}</div><button type="button" onClick={() => { const switchingToBronze = finish !== 'bronze'; setFinish('bronze'); setPaintMenuOpen(false); if (switchingToBronze) resetBriefResults(); }} className={`rounded-xl border p-4 text-left transition ${finish === 'bronze' ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full bg-gradient-to-br from-[#d9a963] to-[#6b3518] shadow-inner" />{labels.bronze}</div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.bronzeHint}</p></button></div>
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-bold leading-5 text-amber-900"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div></div>
@@ -1157,7 +1410,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
             {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}</div></div> : null}
 
             <button type="button" onClick={generateBriefModel} disabled={selectedRender === null || briefStatus === 'generating-model'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_to_3d_click">{briefStatus === 'generating-model' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{briefStatus === 'generating-model' ? labels.modelQueued : labels.generateFromRender}</button></div> : null}
-          {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder(generatedModel)} /> : null}
+          {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl })} /> : null}
         </div>
       )}
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
@@ -1165,8 +1418,40 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   );
 }
 
-function BusinessRequestPanel({ t }: { t: GiftCopy }) {
+function BusinessRequestPanel({ t, onSubmitted }: { t: GiftCopy; onSubmitted: () => void }) {
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [requestNo, setRequestNo] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+
+  async function submitBusinessRequest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError('');
+    const data = new FormData(event.currentTarget);
+    try {
+      const response = await fetch('/api/gift/requests', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: 'business_sample', title: String(data.get('title') || '公司业务打印申请'),
+          customerCompany: String(data.get('customerCompany') || ''), businessScene: String(data.get('businessScene') || ''),
+          quantity: Number(data.get('quantity') || 1), finishType: String(data.get('finishType') || 'white'),
+          paintColor: data.get('finishType') === 'paint' ? String(data.get('paintColor') || '#0B77B7') : null,
+          requestedCompletionDate: String(data.get('deadline') || '') || null, pickupLocation: t.pickupValue,
+          requestNotes: String(data.get('notes') || ''), specifications: { source: String(data.get('source') || '') },
+        }),
+      });
+      const result = await response.json() as { id?: number; requestNo?: string; message?: string };
+      if (!response.ok || !result.id) throw new Error(result.message || '申请提交失败');
+      for (const file of files) {
+        const form = new FormData(); form.set('file', file);
+        form.set('role', /\.(stl|obj|3mf|glb|gltf)$/i.test(file.name) ? 'source_model' : 'reference');
+        const upload = await fetch(`/api/gift/requests/${result.id}/attachments`, { method: 'POST', credentials: 'same-origin', body: form });
+        if (!upload.ok) throw new Error('申请已创建，但部分附件上传失败，请联系运营人员补充。');
+      }
+      setRequestNo(result.requestNo || ''); setSubmitted(true); onSubmitted();
+    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : '申请提交失败'); }
+    finally { setSaving(false); }
+  }
 
   return (
     <section id="business-request" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
@@ -1179,41 +1464,188 @@ function BusinessRequestPanel({ t }: { t: GiftCopy }) {
         <div className="max-w-xs rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs font-bold leading-5 text-cyan-900"><div className="flex items-center gap-2"><PackageCheck className="h-4 w-4" />{t.businessTitle}</div><p className="mt-1">{t.businessDescription}</p></div>
       </div>
       {submitted ? (
-        <div className="mt-7 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div><h3 className="text-sm font-black">{t.businessSubmitted}</h3><p className="mt-1 text-xs font-medium leading-5">{t.orderSuccessHint}</p></div></div>
+        <div className="mt-7 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div><h3 className="text-sm font-black">{t.businessSubmitted}</h3><p className="mt-1 text-xs font-medium leading-5">{t.orderSuccessHint}{requestNo ? `（${requestNo}）` : ''}</p></div></div>
       ) : (
-        <form className="mt-7 grid gap-5 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
-          <label className="block text-sm font-black text-slate-700">{t.businessUseCase}<select required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option>{t.sceneCustomer}</option><option>{t.sceneEvent}</option><option>{t.businessTitle}</option></select></label>
-          <label className="block text-sm font-black text-slate-700">{t.businessSource}<select required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option>{t.libraryTitle}</option><option>{t.generateTitle}</option><option>{t.businessTitle}</option></select></label>
-          <label className="block text-sm font-black text-slate-700">{t.businessDeadline}<input type="date" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
-          <label className="block text-sm font-black text-slate-700 md:col-span-2">{t.note}<textarea required rows={4} placeholder={t.businessRequestPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
-          <div className="md:col-span-2"><button type="submit" className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e]" data-umami-event="gift_business_request_submit_click"><Factory className="h-5 w-5" />{t.businessSubmit}</button></div>
+        <form className="mt-7 grid gap-5 md:grid-cols-2" onSubmit={(event) => void submitBusinessRequest(event)}>
+          <label className="block text-sm font-black text-slate-700">申请名称<input name="title" required maxLength={255} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="例如：上海展会设备样件打印" /></label>
+          <label className="block text-sm font-black text-slate-700">客户/业务项目<input name="customerCompany" maxLength={255} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="客户名称或内部项目" /></label>
+          <label className="block text-sm font-black text-slate-700">{t.businessUseCase}<select name="businessScene" required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option value="customer-gift">{t.sceneCustomer}</option><option value="exhibition">{t.sceneEvent}</option><option value="business-sample">{t.businessTitle}</option></select></label>
+          <label className="block text-sm font-black text-slate-700">{t.businessSource}<select name="source" required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option value="catalog">{t.libraryTitle}</option><option value="ai">{t.generateTitle}</option><option value="own-model">{t.businessTitle}</option></select></label>
+          <label className="block text-sm font-black text-slate-700">数量<input name="quantity" type="number" min="1" max="10000" defaultValue="1" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label>
+          <label className="block text-sm font-black text-slate-700">成品工艺<select name="finishType" defaultValue="white" className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="white">白膜</option><option value="paint">单色喷漆</option><option value="bronze">铜做旧</option><option value="other">其他</option></select></label>
+          <label className="block text-sm font-black text-slate-700">喷漆颜色（选择喷漆时）<input name="paintColor" type="color" defaultValue="#0B77B7" className="mt-2 h-11 w-full rounded-md border border-slate-200 p-1" /></label>
+          <label className="block text-sm font-black text-slate-700">{t.businessDeadline}<input name="deadline" type="date" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+          <label className="block text-sm font-black text-slate-700 md:col-span-2">模型、图片或说明附件<input type="file" multiple accept=".stl,.obj,.3mf,.glb,.gltf,.png,.jpg,.jpeg,.webp,.pdf,.zip" onChange={(event) => setFiles(Array.from(event.target.files || []))} className="mt-2 block w-full rounded-md border border-slate-200 bg-white p-3 text-xs" /><span className="mt-1 block text-xs font-medium text-slate-400">已选择 {files.length} 个文件</span></label>
+          <label className="block text-sm font-black text-slate-700 md:col-span-2">{t.note}<textarea name="notes" required rows={4} maxLength={5000} placeholder={t.businessRequestPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+          {error ? <p className="rounded-md bg-red-50 p-3 text-xs font-bold text-red-700 md:col-span-2">{error}</p> : null}
+          <div className="md:col-span-2"><button disabled={saving} type="submit" className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:opacity-50" data-umami-event="gift_business_request_submit_click">{saving ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Factory className="h-5 w-5" />}{t.businessSubmit}</button></div>
         </form>
       )}
     </section>
   );
 }
 
-function GiftDashboard({ language, t, employeeName, onLogout }: { language: GiftLanguage; t: GiftCopy; employeeName: string; onLogout: () => void }) {
+type MyGiftRequest = {
+  id: number; requestNo: string; requestType: string; modelTitle: string | null; title: string; customerCompany: string | null;
+  businessScene: string | null; quantity: number; finishType: string; paintColor: string | null; requestedCompletionDate: string | null;
+  pickupLocation: string | null; requestNotes: string | null; status: string; assigneeName: string | null; productionBatchNo: string | null;
+  scheduledCompleteAt: string | null; deliveryMethod: string | null; deliveryRecipient: string | null; deliveryNotes: string | null;
+  createdAt: string; updatedAt: string;
+};
+
+type MyGiftRequestDetail = {
+  request: MyGiftRequest;
+  events: { id: number; type: string; toStatus: string | null; comment: string | null; actorName: string; createdAt: string }[];
+  attachments: { id: number; assetId: number; role: string; filename: string; size: number | null; uploaderName: string | null; createdAt: string }[];
+};
+
+const giftRequestStatus: Record<string, { zh: string; en: string }> = {
+  submitted: { zh: '待审核', en: 'Submitted' }, reviewing: { zh: '审核中', en: 'In review' }, approved: { zh: '已批准', en: 'Approved' },
+  rejected: { zh: '已拒绝', en: 'Rejected' }, queued: { zh: '已排产', en: 'Scheduled' }, printing: { zh: '打印中', en: 'Printing' },
+  ready: { zh: '待领取', en: 'Ready' }, completed: { zh: '已完成', en: 'Completed' }, cancelled: { zh: '已取消', en: 'Cancelled' },
+};
+
+function MyRequestsPanel({ language, refreshKey }: { language: GiftLanguage; refreshKey: number }) {
+  const [requests, setRequests] = useState<MyGiftRequest[]>([]);
+  const [detail, setDetail] = useState<MyGiftRequestDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const label = (status: string) => giftRequestStatus[status]?.[language] || status;
+
+  async function loadRequests() {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch('/api/gift/requests', { cache: 'no-store', credentials: 'same-origin' });
+      const result = await response.json() as { requests?: MyGiftRequest[]; message?: string };
+      if (!response.ok) throw new Error(result.message || '申请记录加载失败');
+      setRequests(result.requests || []);
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : '申请记录加载失败'); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void loadRequests(); }, [refreshKey]);
+
+  async function openRequest(id: number) {
+    setError('');
+    try {
+      const response = await fetch(`/api/gift/requests/${id}`, { cache: 'no-store', credentials: 'same-origin' });
+      const result = await response.json() as MyGiftRequestDetail & { message?: string };
+      if (!response.ok) throw new Error(result.message || '申请详情加载失败');
+      setDetail(result);
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : '申请详情加载失败'); }
+  }
+
+  async function cancelRequest() {
+    if (!detail || !window.confirm(language === 'zh' ? '确认取消这条打印申请？' : 'Cancel this print request?')) return;
+    const response = await fetch(`/api/gift/requests/${detail.request.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel', reason: language === 'zh' ? '员工主动取消' : 'Cancelled by requester' }) });
+    const result = await response.json() as { message?: string };
+    if (!response.ok) return setError(result.message || '取消失败');
+    setDetail(null); await loadRequests();
+  }
+
+  async function uploadAttachment(file?: File) {
+    if (!file || !detail) return;
+    setUploading(true); setError('');
+    try {
+      const data = new FormData(); data.set('file', file); data.set('role', /\.(stl|obj|3mf|glb|gltf)$/i.test(file.name) ? 'source_model' : 'reference');
+      const response = await fetch(`/api/gift/requests/${detail.request.id}/attachments`, { method: 'POST', credentials: 'same-origin', body: data });
+      const result = await response.json() as { message?: string };
+      if (!response.ok) throw new Error(result.message || '附件上传失败');
+      await openRequest(detail.request.id);
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : '附件上传失败'); }
+    finally { setUploading(false); }
+  }
+
+  return (
+    <section id="my-requests" className="mx-auto max-w-[1480px] px-5 pt-6">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-center justify-between gap-4 p-5 text-left">
+          <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-[#0b4f9c]"><FileText className="h-5 w-5" /></span><div><h2 className="text-sm font-black text-slate-900">{language === 'zh' ? '我的打印申请' : 'My print requests'}</h2><p className="mt-1 text-xs font-medium text-slate-500">{language === 'zh' ? `${requests.length} 条申请，查看审核、排产和交付进度` : `${requests.length} requests · review production and delivery progress`}</p></div></div>
+          <ChevronDown className={`h-5 w-5 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+        {expanded ? <div className="border-t border-slate-100 p-5"><div className="mb-4 flex justify-end"><button onClick={() => void loadRequests()} className="inline-flex items-center gap-2 text-xs font-black text-[#0b4f9c]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{language === 'zh' ? '刷新' : 'Refresh'}</button></div>{error ? <p className="mb-4 rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}{!loading && requests.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center text-xs font-bold text-slate-400">{language === 'zh' ? '还没有提交打印申请' : 'No print requests yet'}</div> : <div className="space-y-2">{requests.map((request) => <button key={request.id} onClick={() => void openRequest(request.id)} className="grid w-full items-center gap-3 rounded-lg border border-slate-100 p-4 text-left transition hover:border-cyan-200 hover:bg-cyan-50/30 md:grid-cols-[150px_1fr_110px_120px_24px]"><span className="font-mono text-xs font-black text-[#0b4f9c]">{request.requestNo}</span><span><strong className="block text-sm text-slate-900">{request.title}</strong><small className="text-slate-500">{request.quantity} {language === 'zh' ? '件' : 'pcs'} · {request.modelTitle || request.businessScene || request.requestType}</small></span><span className="text-xs font-black text-slate-600">{label(request.status)}</span><span className="text-xs text-slate-400">{new Date(request.createdAt).toLocaleDateString()}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div>}</div> : null}
+      </div>
+      {detail ? <div className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"><div className="h-full w-full max-w-2xl overflow-y-auto bg-slate-100 p-6 shadow-2xl"><div className="flex items-start justify-between"><div><div className="font-mono text-xs font-black text-cyan-700">{detail.request.requestNo}</div><h2 className="mt-2 text-2xl font-black">{detail.request.title}</h2><p className="mt-1 text-sm font-bold text-slate-500">{label(detail.request.status)}</p></div><button onClick={() => setDetail(null)}><X /></button></div><div className="mt-5 grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-2"><RequestInfo label={language === 'zh' ? '数量与工艺' : 'Quantity & finish'} value={`${detail.request.quantity} · ${detail.request.finishType}${detail.request.paintColor ? ` ${detail.request.paintColor}` : ''}`} /><RequestInfo label={language === 'zh' ? '期望完成' : 'Requested date'} value={detail.request.requestedCompletionDate || '-'} /><RequestInfo label={language === 'zh' ? '生产批次' : 'Batch'} value={detail.request.productionBatchNo || '-'} /><RequestInfo label={language === 'zh' ? '计划完成' : 'Scheduled completion'} value={detail.request.scheduledCompleteAt ? new Date(detail.request.scheduledCompleteAt).toLocaleString() : '-'} /><RequestInfo label={language === 'zh' ? '负责人' : 'Operator'} value={detail.request.assigneeName || '-'} /><RequestInfo label={language === 'zh' ? '交付信息' : 'Delivery'} value={[detail.request.deliveryRecipient, detail.request.deliveryNotes].filter(Boolean).join(' · ') || '-'} /></div><div className="mt-5 rounded-xl bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-black">{language === 'zh' ? '申请附件' : 'Attachments'}</h3><label className="cursor-pointer rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-[#0b4f9c]"><UploadCloud className="mr-1 inline h-4 w-4" />{uploading ? '上传中…' : language === 'zh' ? '补充附件' : 'Add file'}<input disabled={uploading} type="file" className="sr-only" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div><div className="mt-3 space-y-2">{detail.attachments.map((file) => <a key={file.id} href={`/api/gift/assets/${file.assetId}?download=1`} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-xs font-bold text-slate-700"><span>{file.filename}</span><Download className="h-4 w-4 text-[#0b4f9c]" /></a>)}</div></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '处理进度' : 'Timeline'}</h3><div className="mt-4 space-y-4">{detail.events.map((event) => <div key={event.id} className="border-l-2 border-cyan-200 pl-4"><div className="text-sm font-black">{event.toStatus ? label(event.toStatus) : event.type}</div><div className="mt-1 text-xs text-slate-400">{event.actorName} · {new Date(event.createdAt).toLocaleString()}</div>{event.comment ? <p className="mt-1 text-xs text-slate-600">{event.comment}</p> : null}</div>)}</div></div>{['submitted', 'reviewing', 'approved', 'queued'].includes(detail.request.status) ? <button onClick={() => void cancelRequest()} className="mt-5 rounded-md border border-red-200 px-4 py-2 text-xs font-black text-red-700">{language === 'zh' ? '取消申请' : 'Cancel request'}</button> : null}</div></div> : null}
+    </section>
+  );
+}
+
+function RequestInfo({ label, value }: { label: string; value: string }) {
+  return <div><div className="text-[11px] font-black text-slate-400">{label}</div><div className="mt-1 text-sm font-bold text-slate-800">{value}</div></div>;
+}
+
+function AiAccessNotice({ employee, t, onUpdated }: { employee: GiftEmployee; t: GiftCopy; onUpdated: (employee: GiftEmployee) => void }) {
+  const [reason, setReason] = useState(employee.applicationReason || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const content = employee.approvalStatus === 'rejected'
+    ? { title: t.aiRejectedTitle, description: t.aiRejectedDescription, tone: 'border-red-200 bg-red-50 text-red-900' }
+    : employee.approvalStatus === 'suspended'
+      ? { title: t.aiSuspendedTitle, description: t.aiSuspendedDescription, tone: 'border-slate-300 bg-slate-50 text-slate-800' }
+      : { title: t.aiPendingTitle, description: t.aiPendingDescription, tone: 'border-amber-200 bg-amber-50 text-amber-900' };
+  async function submitApplication() {
+    if (reason.trim().length < 5) return;
+    setSaving(true); setError(null);
+    try {
+      const response = await fetch('/api/gift/auth/application', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
+      const payload = await response.json() as { employee?: GiftEmployee; message?: string };
+      if (!response.ok || !payload.employee) throw new Error(payload.message || 'Unable to submit application.');
+      onUpdated(payload.employee);
+    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'Unable to submit application.'); } finally { setSaving(false); }
+  }
+  return (
+    <section id="ai-generate" className={`rounded-2xl border p-6 shadow-sm md:p-8 ${content.tone}`}>
+      <div className="flex items-start gap-4"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/80"><Clock3 className="h-5 w-5" /></div><div className="min-w-0 flex-1"><h2 className="text-xl font-black">{content.title}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 opacity-80">{content.description}</p>{employee.approvalNote ? <p className="mt-3 text-xs font-bold opacity-70">{employee.approvalNote}</p> : null}{employee.applicationReason && employee.approvalStatus === 'pending' ? <p className="mt-4 rounded-lg bg-white/70 p-3 text-xs font-bold">{t.aiApplicationSubmitted}<span className="mt-1 block font-medium opacity-75">{employee.applicationReason}</span></p> : null}{employee.approvalStatus !== 'suspended' && (!employee.applicationReason || employee.approvalStatus === 'rejected') ? <div className="mt-5 max-w-2xl"><label className="text-xs font-black">{t.aiApplicationLabel}<textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={500} placeholder={t.aiApplicationPlaceholder} className="mt-2 w-full rounded-lg border border-current/15 bg-white p-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-cyan-200" /></label>{error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}<button type="button" disabled={saving || reason.trim().length < 5} onClick={() => void submitApplication()} className="mt-3 h-10 rounded-md bg-[#0b4f9c] px-4 text-xs font-black text-white disabled:opacity-50">{saving ? t.aiApplicationSaving : t.aiApplicationButton}</button></div> : null}</div></div>
+    </section>
+  );
+}
+
+function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: { language: GiftLanguage; t: GiftCopy; employee: GiftEmployee; onLogout: () => void; onEmployeeUpdated: (employee: GiftEmployee) => void }) {
   const [selectedModel, setSelectedModel] = useState<GiftModel | null>(null);
-  const [hasOrder, setHasOrder] = useState(false);
-  const [category, setCategory] = useState<'all' | GiftModel['category']>('all');
+  const [requestRefreshKey, setRequestRefreshKey] = useState(0);
+  const [category, setCategory] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [showBusinessRequest, setShowBusinessRequest] = useState(false);
-  const models = modelCatalog[language];
+  const [models, setModels] = useState<GiftModel[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<{ slug: string; nameZh: string; nameEn: string | null }[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
   const labels = studioCopy[language];
+
+  useEffect(() => {
+    let active = true;
+    setCatalogLoading(true); setCatalogError('');
+    fetch('/api/gift/catalog', { cache: 'no-store', credentials: 'same-origin' }).then(async (response) => {
+      const result = await response.json() as { models?: { id: number; slug: string; titleZh: string; titleEn: string | null; descriptionZh: string | null; descriptionEn: string | null; category: string; categoryNameZh: string; categoryNameEn: string | null; useCase: string | null; supportedFinishes: string[]; previewAssetId: number | null; modelAssetId: number | null }[]; categories?: { slug: string; nameZh: string; nameEn: string | null }[]; message?: string };
+      if (!response.ok) throw new Error(result.message || '礼品库加载失败');
+      if (!active) return;
+      setCatalogCategories(result.categories || []);
+      setModels((result.models || []).map((model, index) => {
+        const paint = model.supportedFinishes.includes('paint');
+        const bronze = model.supportedFinishes.includes('bronze');
+        return {
+          id: model.id, name: language === 'zh' ? model.titleZh : model.titleEn || model.titleZh,
+          description: language === 'zh' ? model.descriptionZh || '' : model.descriptionEn || model.descriptionZh || '',
+          category: model.category, categoryLabel: language === 'zh' ? model.categoryNameZh : model.categoryNameEn || model.categoryNameZh,
+          useCase: model.useCase || (language === 'zh' ? '公司业务打印' : 'Business print'),
+          finishLabel: paint && bronze ? (language === 'zh' ? '单色喷漆 / 铜做旧' : 'Paint / antique bronze') : bronze ? (language === 'zh' ? '铜做旧' : 'Antique bronze') : (language === 'zh' ? '单色喷漆' : 'Monochrome paint'),
+          finish: paint && bronze ? 'both' : bronze ? 'bronze' : 'paint',
+          color: ['from-[#083f7e] to-[#22d3ee]', 'from-[#7c3f15] to-[#d6a15f]', 'from-[#164e63] to-[#38bdf8]'][index % 3],
+          accent: model.slug.slice(0, 4).toUpperCase(), previewAssetId: model.previewAssetId, modelAssetId: model.modelAssetId,
+        };
+      }));
+    }).catch((loadError) => { if (active) setCatalogError(loadError instanceof Error ? loadError.message : '礼品库加载失败'); }).finally(() => { if (active) setCatalogLoading(false); });
+    return () => { active = false; };
+  }, [language]);
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const visibleModels = models.filter((model) => {
     const matchesCategory = category === 'all' || model.category === category;
     const matchesSearch = !normalizedSearch || `${model.name} ${model.description} ${model.useCase} ${model.categoryLabel}`.toLocaleLowerCase().includes(normalizedSearch);
     return matchesCategory && matchesSearch;
   });
-  const categories: { id: 'all' | GiftModel['category']; label: string }[] = [
-    { id: 'all', label: labels.all },
-    { id: 'business', label: labels.business },
-    { id: 'culture', label: labels.culture },
-    { id: 'technology', label: labels.technology },
-    { id: 'custom', label: labels.custom },
-  ];
+  const categories = [{ id: 'all', label: labels.all }, ...catalogCategories.map((item) => ({ id: item.slug, label: language === 'zh' ? item.nameZh : item.nameEn || item.nameZh }))];
 
   return (
     <>
@@ -1221,7 +1653,7 @@ function GiftDashboard({ language, t, employeeName, onLogout }: { language: Gift
         <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-5">
           <div>
             <div className="inline-flex items-center gap-2 text-xs font-black text-cyan-700"><BadgeCheck className="h-4 w-4" />{labels.eyebrow}</div>
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employeeName}</span><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{hasOrder ? `${labels.orders} 1` : labels.orders}</span></div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employee.name}</span><span className="text-xs text-slate-300">·</span><a href="#my-requests" className="text-xs font-medium text-[#0b4f9c]">{labels.orders}</a>{employee.approvalStatus === 'approved' ? <><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{t.quotaToday}：{employee.quota.renderUsed}/{employee.quota.renderDailyLimit} · 3D {employee.quota.modelUsed}/{employee.quota.modelDailyLimit}</span></> : null}</div>
           </div>
           <button type="button" onClick={onLogout} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-[#0b4f9c]" data-umami-event="gift_logout_click"><LogOut className="h-4 w-4" />{t.logout}</button>
         </div>
@@ -1245,31 +1677,53 @@ function GiftDashboard({ language, t, employeeName, onLogout }: { language: Gift
 
           <div className="mt-5 flex flex-wrap gap-2">{categories.map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.id)} className={`rounded-full border px-4 py-2 text-xs font-black transition ${category === item.id ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-[#0b4f9c]'}`}>{item.label}</button>)}</div>
 
-          {visibleModels.length > 0 ? <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleModels.map((model) => <ModelCard key={model.id} model={model} t={t} labels={labels} onOrder={setSelectedModel} />)}</div> : <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-bold text-slate-500">{labels.noResult}</div>}
+          {catalogError ? <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-sm font-bold text-red-700">{catalogError}</div> : null}
+          {catalogLoading ? <div className="mt-6 grid min-h-40 place-items-center"><LoaderCircle className="h-7 w-7 animate-spin text-[#0b4f9c]" /></div> : visibleModels.length > 0 ? <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleModels.map((model) => <ModelCard key={model.id} model={model} t={t} labels={labels} onOrder={setSelectedModel} />)}</div> : <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-bold text-slate-500">{labels.noResult}</div>}
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1480px] px-5 py-4"><AiGiftStudio language={language} onOrder={setSelectedModel} /></section>
+      <MyRequestsPanel language={language} refreshKey={requestRefreshKey} />
+
+      <section className="mx-auto max-w-[1480px] px-5 py-4">{employee.approvalStatus === 'approved' ? <AiGiftStudio language={language} onOrder={setSelectedModel} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />}</section>
 
       <section className="mx-auto max-w-[1480px] px-5 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-slate-100 text-[#0b4f9c]"><Factory className="h-5 w-5" /></div><div><h2 className="text-sm font-black text-slate-900">{labels.newRequest}</h2><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{t.businessDescription}</p></div></div>
           <button type="button" onClick={() => setShowBusinessRequest((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-4 text-xs font-black text-slate-600 transition hover:border-cyan-300 hover:text-[#0b4f9c]" data-umami-event="gift_business_request_entry_click">{labels.newRequestButton}<ChevronRight className={`h-4 w-4 transition ${showBusinessRequest ? 'rotate-90' : ''}`} /></button>
         </div>
-        {showBusinessRequest ? <div className="mt-4"><BusinessRequestPanel t={t} /></div> : null}
+        {showBusinessRequest ? <div className="mt-4"><BusinessRequestPanel t={t} onSubmitted={() => setRequestRefreshKey((value) => value + 1)} /></div> : null}
       </section>
 
       <footer className="mt-5 border-t border-slate-200 bg-white px-5 py-5"><div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500"><span>© UnionAM</span><span className="text-slate-300">|</span><span>{t.allLocal}</span><span className="text-slate-300">|</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪ICP备17023219号-18</a><span className="text-slate-300">|</span><a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪公网安备31011702891863号</a></div></footer>
 
-      {selectedModel ? <OrderModal model={selectedModel} t={t} onClose={() => setSelectedModel(null)} onSubmitted={() => setHasOrder(true)} /> : null}
+      {selectedModel ? <OrderModal model={selectedModel} t={t} onClose={() => setSelectedModel(null)} onSubmitted={() => setRequestRefreshKey((value) => value + 1)} /> : null}
     </>
   );
 }
 
 type GiftEmployee = {
+  id: number;
   userId: string;
   name: string;
   departments: number[];
+  departmentNames: string[];
+  position: string | null;
+  role: 'employee' | 'operator' | 'admin';
+  employmentStatus: 'active' | 'inactive';
+  approvalStatus: 'pending' | 'approved' | 'rejected' | 'suspended';
+  appliedAt: string | null;
+  reviewedAt: string | null;
+  approvalNote: string | null;
+  applicationReason: string | null;
+  quota: {
+    renderDailyLimit: number;
+    editDailyLimit: number;
+    modelDailyLimit: number;
+    maxConcurrentJobs: number;
+    renderUsed: number;
+    editUsed: number;
+    modelUsed: number;
+  };
 };
 
 function AuthenticationLoading({ t }: { t: GiftCopy }) {
@@ -1377,7 +1831,7 @@ export default function GiftPage() {
           errorCode={authError}
         />
       ) : null}
-      {authStatus === 'authenticated' && employee ? <GiftDashboard language={giftLanguage} t={t} employeeName={employee.name} onLogout={logout} /> : null}
+      {authStatus === 'authenticated' && employee ? <GiftDashboard language={giftLanguage} t={t} employee={employee} onLogout={logout} onEmployeeUpdated={setEmployee} /> : null}
     </main>
   );
 }

@@ -1,18 +1,20 @@
 import { GiftAiError, queryWhiteModel } from '@/lib/gift-ai';
 import { giftAiErrorResponse, requireGiftEmployee } from '@/lib/gift-ai-route';
+import { getOwnedGiftAiJob } from '@/lib/gift-db';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
   try {
-    requireGiftEmployee();
+    const session = await requireGiftEmployee({ approved: true });
     const searchParams = new URL(request.url).searchParams;
     const id = searchParams.get('id')?.trim();
     const requestedType = searchParams.get('type')?.trim().toLowerCase();
     if (!id || id.length > 160) throw new GiftAiError('A valid model job ID is required.', 400, 'validation');
     if (!requestedType || !['stl', 'glb', 'gltf', 'preview'].includes(requestedType)) throw new GiftAiError('Unsupported model asset type.', 400, 'validation');
 
+    await getOwnedGiftAiJob(session, id);
     const job = await queryWhiteModel(id);
     if (job.status !== 'completed') throw new GiftAiError('The generated model is not ready.', 409, 'validation');
     const model = requestedType === 'preview'

@@ -17,13 +17,20 @@ type WeComMemberResponse = WeComApiResponse & {
   userid?: string;
   name?: string;
   department?: number[];
+  position?: string;
   status?: number;
+};
+
+type WeComDepartmentResponse = WeComApiResponse & {
+  department?: { id?: number; name?: string }[];
 };
 
 export type VerifiedWeComEmployee = {
   userId: string;
   name: string;
   departments: number[];
+  departmentNames: string[];
+  position: string | null;
   corpId: string;
 };
 
@@ -119,10 +126,24 @@ export async function verifyWeComEmployee(code: string): Promise<VerifiedWeComEm
     throw new WeComAuthError('The enterprise member is not active.', 'unauthorized');
   }
 
+  const departmentIds = Array.isArray(member.department) ? member.department.filter(Number.isInteger) : [];
+  let departmentNames: string[] = [];
+  try {
+    const departmentUrl = new URL('https://qyapi.weixin.qq.com/cgi-bin/department/list');
+    departmentUrl.searchParams.set('access_token', accessToken);
+    const departments = await requestWeCom<WeComDepartmentResponse>(departmentUrl);
+    const wantedIds = new Set(departmentIds);
+    departmentNames = (departments.department || []).flatMap((department) => department.id && wantedIds.has(department.id) && department.name?.trim() ? [department.name.trim()] : []);
+  } catch (error) {
+    console.warn('[gift-auth] WeCom department names could not be synchronized.', error);
+  }
+
   return {
     userId: member.userid,
     name: member.name?.trim() || member.userid,
-    departments: Array.isArray(member.department) ? member.department.filter(Number.isInteger) : [],
+    departments: departmentIds,
+    departmentNames,
+    position: member.position?.trim() || null,
     corpId: configuration.corpId,
   };
 }

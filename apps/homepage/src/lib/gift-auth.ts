@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 
 export const GIFT_SESSION_COOKIE = 'unionam.gift.session';
 export const WECOM_STATE_COOKIE = 'unionam.gift.wecom.state';
+export const WECOM_RETURN_COOKIE = 'unionam.gift.wecom.return';
 
 const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 
@@ -89,12 +90,14 @@ export function getGiftSession() {
 }
 
 export function giftSessionCookieOptions() {
+  const domain = process.env.GIFT_COOKIE_DOMAIN?.trim();
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
     secure: process.env.NODE_ENV === 'production',
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
+    ...(domain ? { domain } : {}),
   };
 }
 
@@ -104,6 +107,13 @@ export function weComStateCookieOptions() {
     sameSite: 'lax' as const,
     secure: process.env.NODE_ENV === 'production',
     path: '/api/gift/auth/wecom',
+    maxAge: 10 * 60,
+  };
+}
+
+export function weComReturnCookieOptions() {
+  return {
+    ...weComStateCookieOptions(),
     maxAge: 10 * 60,
   };
 }
