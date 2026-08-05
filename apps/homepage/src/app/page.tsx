@@ -103,6 +103,7 @@ export default function HomePage() {
   const navItems = [
     { label: t.navQuote, href: '/quote' },
     { label: t.navConverter, href: '/converter' },
+    { label: t.navGift, href: '/gift', eventName: 'header_gift_click' },
   ];
 
   return (

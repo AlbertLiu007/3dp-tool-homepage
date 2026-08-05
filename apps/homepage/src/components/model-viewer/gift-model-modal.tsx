@@ -1,0 +1,104 @@
+'use client';
+
+import { Download, LoaderCircle, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type * as THREE from 'three';
+import { GiftModelViewer } from './gift-model-viewer';
+import { disposeObjectResources } from '@/lib/model/model-scene';
+import { measureGiftModel } from '@/lib/model/model-measure';
+import { parseGiftModelBuffer } from '@/lib/model/parse-model';
+import type { GiftModelMeasurement } from '@/lib/model/model-types';
+
+export type GeneratedGiftModel = {
+  jobId: string;
+  modelUrl: string;
+  modelType: 'stl' | 'glb' | 'gltf';
+  previewImageUrl?: string;
+};
+
+const modalCopy = {
+  zh: {
+    title: '白膜 3D 模型预览', loading: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。',
+    close: '关闭', download: '下载 STL 模型', fileName: '文件名', fileSize: '文件大小', dimensions: '长 × 宽 × 高', volume: '体积', surfaceArea: '表面积', triangles: '三角面片',
+    lightFixed: '固定侧光', lightFollow: '跟随视角光', lightFixedShort: '固定光', lightFollowShort: '跟随光', showGrid: '显示网格', hideGrid: '隐藏网格', gridOn: '网格开', gridOff: '网格关', rotatePan: '旋转/平移', rotate: '旋转', pan: '平移', resetView: '重置视角',
+  },
+  en: {
+    title: 'White 3D model preview', loading: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.',
+    close: 'Close', download: 'Download STL model', fileName: 'File Name', fileSize: 'File Size', dimensions: 'L × W × H', volume: 'Volume', surfaceArea: 'Surface Area', triangles: 'Triangles',
+    lightFixed: 'Fixed side light', lightFollow: 'Camera-following light', lightFixedShort: 'Fixed', lightFollowShort: 'Follow', showGrid: 'Show Grid', hideGrid: 'Hide Grid', gridOn: 'Grid On', gridOff: 'Grid Off', rotatePan: 'Rotate/Pan', rotate: 'Rotate', pan: 'Pan', resetView: 'Reset View',
+  },
+};
+
+function formatNumber(value: number | null | undefined, language: 'zh' | 'en', digits = 1) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '--';
+  return value.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+
+function formatFileSize(bytes: number | null) {
+  if (!bytes || !Number.isFinite(bytes)) return '--';
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 'en'; model: GeneratedGiftModel; onClose: () => void }) {
+  const labels = modalCopy[language];
+  const [object, setObject] = useState<THREE.Object3D | null>(null);
+  const [measurement, setMeasurement] = useState<GiftModelMeasurement | null>(null);
+  const [fileSize, setFileSize] = useState<number | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let parsedObject: THREE.Object3D | null = null;
+    setStatus('loading');
+    void fetch(model.modelUrl, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Unable to load model.');
+        const buffer = await response.arrayBuffer();
+        setFileSize(buffer.byteLength);
+        const parsed = await parseGiftModelBuffer(buffer, model.modelType);
+        parsedObject = parsed.object;
+        setObject(parsed.object);
+        setMeasurement(measureGiftModel(parsed.object));
+        setStatus('ready');
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setStatus('failed');
+      });
+    return () => {
+      controller.abort();
+      if (parsedObject) disposeObjectResources(parsedObject);
+    };
+  }, [model]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm md:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={labels.title} className="max-h-[94vh] w-full max-w-[1180px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4 md:px-5"><div><h2 className="text-base font-black text-slate-950">{labels.title}</h2><p className="text-[11px] font-bold text-slate-400">{model.modelType.toUpperCase()} · UnionAM</p></div><button type="button" onClick={onClose} title={labels.close} className="grid h-9 w-9 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-5 w-5" /></button></div>
+        <div className="overflow-hidden rounded-b-xl border-slate-200 bg-white">
+          <div className="relative h-[58vh] min-h-[360px] border-b border-slate-200 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)] md:min-h-[460px]">
+            {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : null}
+            {status !== 'ready' ? <div className="absolute inset-0 grid place-items-center"><div className={`flex items-center gap-2 rounded-md border bg-white/90 px-4 py-3 text-sm font-bold shadow-sm ${status === 'failed' ? 'border-red-200 text-red-700' : 'border-slate-200 text-slate-700'}`}>{status === 'loading' ? <LoaderCircle className="h-5 w-5 animate-spin text-cyan-700" /> : null}{status === 'loading' ? labels.loading : labels.failed}</div></div> : null}
+            <div className="absolute left-4 top-4 rounded-md border border-white/70 bg-white/90 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">{status === 'loading' ? labels.loading : status === 'ready' ? labels.ready : labels.failed}</div>
+          </div>
+          <div className="border-b border-slate-100 px-4 pt-4"><div className="flex flex-wrap items-end justify-between gap-3"><div className="min-w-0 flex-1"><div className="text-xs font-bold text-slate-500">{labels.fileName}</div><div className="mt-1 truncate text-sm font-black text-slate-950">unionam-gift.{model.modelType}</div></div><div className="shrink-0 text-right"><div className="text-xs font-bold text-slate-500">{labels.fileSize}</div><div className="mt-1 text-sm font-black text-slate-950">{formatFileSize(fileSize)}</div></div></div></div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr]"><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-bold text-slate-500">{labels.dimensions}</div><div className="mt-2 text-lg font-black">{measurement ? `${formatNumber(measurement.dimensionsMm.x, language)} × ${formatNumber(measurement.dimensionsMm.y, language)} × ${formatNumber(measurement.dimensionsMm.z, language)} mm` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-bold text-slate-500">{labels.volume}</div><div className="mt-2 text-lg font-black">{measurement?.volumeCm3 ? `${formatNumber(measurement.volumeCm3, language, 2)} cm³` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-bold text-slate-500">{labels.surfaceArea}</div><div className="mt-2 text-lg font-black">{measurement?.surfaceAreaMm2 ? `${formatNumber(measurement.surfaceAreaMm2, language, 0)} mm²` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-bold text-slate-500">{labels.triangles}</div><div className="mt-2 text-lg font-black">{measurement ? measurement.triangleCount.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '--'}</div></div></div>
+          <div className="flex justify-end border-t border-slate-100 p-4"><a href={model.modelUrl} download={`unionam-gift.${model.modelType}`} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b4f9c] px-4 text-sm font-black text-white transition hover:bg-[#083f7e]"><Download className="h-4 w-4" />{labels.download}</a></div>
+        </div>
+      </div>
+    </div>
+  );
+}

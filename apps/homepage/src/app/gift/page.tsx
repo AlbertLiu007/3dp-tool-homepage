@@ -1,0 +1,1367 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import {
+  BadgeCheck,
+  Box,
+  Boxes,
+  Building2,
+  Car,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleUserRound,
+  Clock3,
+  Cpu,
+  Factory,
+  Gift,
+  ImagePlus,
+  Landmark,
+  Layers3,
+  LoaderCircle,
+  LogOut,
+  Maximize2,
+  Palette,
+  PackageCheck,
+  QrCode,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Tag,
+  UploadCloud,
+  WandSparkles,
+  X,
+} from 'lucide-react';
+import Link from 'next/link';
+import { ToolHeader } from '@unionam/shared-ui';
+import { GiftModelModal, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
+import { useLanguage } from '@/lib/i18n/use-language';
+
+type GiftLanguage = 'zh' | 'en';
+
+const copy = {
+  zh: {
+    pageTitle: '联泰礼品与 3D 打印服务平台',
+    pageSubtitle: '为客户送出独一无二的 3D 打印礼品，也让展会样品、业务样件和内部打印需求统一申请、统一管理。',
+    loginTitle: '企业微信扫码登录',
+    loginDescription: '登录后可为客户选择或生成专属礼品，也可提交展会样品、业务样件等公司业务打印需求。',
+    loginButton: '企业微信扫码登录',
+    loginHint: '仅限联泰科技在职员工使用',
+    localLogin: '本地开发：模拟登录',
+    localHint: '点击下方按钮打开企业微信官方登录二维码。',
+    authLoading: '正在验证企业微信员工身份…',
+    authConfigError: '企业微信应用尚未配置完成，请联系系统管理员。',
+    authNotEmployee: '当前账号不是可用的联泰在职员工账号，无法进入礼品站。',
+    authStateError: '登录请求已失效，请重新扫码登录。',
+    authLoginError: '企业微信登录失败，请稍后重试或联系系统管理员。',
+    loginStarting: '正在打开企业微信登录…',
+    secureTitle: '客户礼赠与业务打印，一站申请',
+    secureDescription: '员工身份由企业微信统一认证，客户礼品、展会样品和业务样件在一个平台留痕管理。',
+    hello: '你好',
+    dashboardDescription: '根据客户行业、偏好和使用场景挑选礼品；展会样品、客户样件及其他业务打印，也可以在这里统一申请。',
+    logout: '退出登录',
+    chooseTitle: '让每一次打印都服务于业务',
+    chooseDescription: '从成熟模型开始，或根据客户调性和业务场景生成新的方案。',
+    libraryTitle: '选择客户礼品与业务样件',
+    libraryDescription: '浏览已审核、可打印的模型，按客户行业、展会主题和使用场景选择合适的 3D 打印方案。',
+    libraryButton: '浏览模型库',
+    generateTitle: '按客户特征生成专属礼品',
+    generateDescription: '上传参考图片，补充客户特征、品牌元素和礼品场景，生成真正与客户匹配的可打印模型。',
+    generateButton: '开始生成',
+    businessTitle: '展会与业务样件申请',
+    businessDescription: '展会展示样品、客户打样件、销售演示件和其他公司业务打印需求，统一提交、统一排产、统一沉淀。',
+    businessButton: '提交业务打印需求',
+    businessRequestTitle: '提交展会 / 业务样件申请',
+    businessRequestDescription: '把原本分散在聊天、表格和临时沟通中的打印需求，统一沉淀到平台，便于审核、排产和复用。',
+    businessUseCase: '业务使用场景',
+    businessSource: '模型来源',
+    businessDeadline: '期望完成时间',
+    businessSubmit: '提交业务打印申请',
+    businessSubmitted: '业务打印申请已提交',
+    businessRequestPlaceholder: '例如：用于 9 月展会展示，需要 3 个汽车内饰样件，要求在展会布展前完成。',
+    orderTitle: '我的打印申请',
+    orderEmpty: '暂无进行中的打印申请',
+    orderEmptyHint: '提交客户礼品、展会样品或业务样件申请后，进度会显示在这里。',
+    browseTitle: '客户礼品与业务样件模型库',
+    browseDescription: '将经过审核的客户礼品、展会样品和业务样件统一沉淀，减少重复建模和临时沟通。',
+    viewDetails: '查看并申请',
+    modelA: '联泰科技品牌纪念摆件',
+    modelADescription: '适合客户拜访、商务纪念和展会展示，让客户收到有联泰辨识度的独特礼品。',
+    modelB: 'UnionAM 个性化铭牌',
+    modelBDescription: '支持姓名、部门、客户名称和日期等文字个性化，适合定制客户礼赠。',
+    modelC: '城市剪影桌面摆件',
+    modelCDescription: '适合展会主题、城市文化和团队活动，也可作为客户场景化礼品。',
+    readyToPrint: '可直接打印',
+    printTime: '预计 3 小时',
+    orderModalTitle: '提交打印申请',
+    orderModalHint: '申请将提交到礼品后台审核，并进入统一的打印排产和交付流程。',
+    quantity: '数量',
+    pickup: '领取地点',
+    pickupValue: '上海总部前台',
+    note: '备注（选填）',
+    notePlaceholder: '例如：用于客户拜访，希望在下周三前完成',
+    submitOrder: '提交申请',
+    cancel: '取消',
+    orderSuccess: '申请已提交',
+    orderSuccessHint: '礼品管理员审核后，你可以在“我的打印申请”中查看进度。',
+    generationTitle: '根据客户调性生成专属 3D 礼品',
+    generationDescription: '描述客户特征、品牌元素和送礼场景，上传参考图，生成结果会先经过可打印性检查。',
+    uploadLabel: '参考图片',
+    uploadHint: '支持 JPG、PNG，最多 5 张图片',
+    uploadChoose: '选择图片',
+    uploaded: '已选择',
+    sceneLabel: '礼品使用场景',
+    scenePlaceholder: '请选择使用场景',
+    sceneCustomer: '客户拜访 / 商务纪念',
+    sceneEvent: '展会 / 活动礼品',
+    sceneEmployee: '员工生日 / 节日礼品',
+    featureLabel: '客户特征、品牌元素与模型需求',
+    featurePlaceholder: '例如：客户是汽车行业，希望体现速度、科技和品牌识别元素，尺寸适合放在办公桌上。',
+    generateNow: '生成 3D 模型方案',
+    generating: '正在生成模型方案…',
+    generated: '已生成 3 个候选方案',
+    generatedHint: '以下结果为本地交互演示，正式版本将接入模型生成服务。',
+    useCandidate: '选择此方案',
+    safetyTitle: '安全提示',
+    safetyDescription: '客户图片、Logo 和特征信息可能包含敏感内容，请确认已获得使用授权。',
+    statusPending: '待审核',
+    statusPrinting: '打印中',
+    statusReady: '待领取',
+    allLocal: '平台仅对企业内部开放，客户礼品、展会样品、业务样件等打印申请统一留痕管理。',
+  },
+  en: {
+    pageTitle: 'UnionTech Gifts & 3D Print Services',
+    pageSubtitle: 'Unique 3D printed gifts for customers, plus one workflow for exhibitions, samples, and internal business printing.',
+    loginTitle: 'Sign in with WeCom',
+    loginDescription: 'Sign in to choose or generate a customer gift, or submit an exhibition sample, business prototype, or other internal print request.',
+    loginButton: 'Sign in with WeCom',
+    loginHint: 'For active UnionTech employees only',
+    localLogin: 'Local development: simulate sign-in',
+    localHint: 'Use the button below to open the official WeCom sign-in QR code.',
+    authLoading: 'Verifying your UnionTech employee identity…',
+    authConfigError: 'WeCom sign-in has not been configured. Contact the system administrator.',
+    authNotEmployee: 'This account is not an active UnionTech employee account and cannot access the gift station.',
+    authStateError: 'This sign-in request has expired. Please scan again.',
+    authLoginError: 'WeCom sign-in failed. Try again later or contact the system administrator.',
+    loginStarting: 'Opening WeCom sign-in…',
+    secureTitle: 'One workflow for gifts and business printing',
+    secureDescription: 'WeCom verifies employees while customer gifts, exhibition samples, and business parts are tracked in one place.',
+    hello: 'Welcome',
+    dashboardDescription: 'Choose a gift that matches your customer, or submit exhibition samples, customer prototypes, and other business printing needs here.',
+    logout: 'Sign out',
+    chooseTitle: 'Make every print serve the business',
+    chooseDescription: 'Start from a proven model or generate a new concept from the customer and business context.',
+    libraryTitle: 'Choose customer gifts and business samples',
+    libraryDescription: 'Browse reviewed models by customer industry, exhibition theme, and use case.',
+    libraryButton: 'Browse model library',
+    generateTitle: 'Generate a gift that matches the customer',
+    generateDescription: 'Upload references and describe customer traits, brand elements, and the gifting context for a printable model.',
+    generateButton: 'Start generating',
+    businessTitle: 'Exhibition and business sample requests',
+    businessDescription: 'Submit exhibition displays, customer prototypes, sales demonstration parts, and other internal printing needs in one workflow.',
+    businessButton: 'Submit a business print request',
+    businessRequestTitle: 'Exhibition / business sample request',
+    businessRequestDescription: 'Capture requests that used to live in chats, spreadsheets, and one-off conversations so they can be reviewed, scheduled, and reused.',
+    businessUseCase: 'Business use case',
+    businessSource: 'Model source',
+    businessDeadline: 'Requested completion date',
+    businessSubmit: 'Submit business print request',
+    businessSubmitted: 'Business print request submitted',
+    businessRequestPlaceholder: 'For example: three automotive interior samples for a September exhibition, needed before booth setup.',
+    orderTitle: 'My print requests',
+    orderEmpty: 'No active print requests',
+    orderEmptyHint: 'Progress appears here after you request a customer gift, exhibition sample, or business part.',
+    browseTitle: 'Customer gifts and business sample library',
+    browseDescription: 'Keep reviewed gifts, exhibition samples, and business parts in one place to reduce duplicate modeling and ad hoc coordination.',
+    viewDetails: 'View and request',
+    modelA: 'UnionTech brand keepsake',
+    modelADescription: 'A distinctive UnionTech keepsake for customer visits, business gifts, and exhibition display.',
+    modelB: 'UnionAM personalized nameplate',
+    modelBDescription: 'Personalize it with a name, department, customer, date, or short message.',
+    modelC: 'City silhouette desk ornament',
+    modelCDescription: 'For exhibition themes, city culture, customer gifting, and team events.',
+    readyToPrint: 'Ready to print',
+    printTime: 'About 3 hours',
+    orderModalTitle: 'Submit a print request',
+    orderModalHint: 'Requests go to the operations team for review, scheduling, production, and delivery.',
+    quantity: 'Quantity',
+    pickup: 'Pickup location',
+    pickupValue: 'Shanghai HQ reception',
+    note: 'Note (optional)',
+    notePlaceholder: 'For example: customer visit, needed before next Wednesday',
+    submitOrder: 'Submit request',
+    cancel: 'Cancel',
+    orderSuccess: 'Request submitted',
+    orderSuccessHint: 'Track progress in My print requests after the gift team reviews it.',
+    generationTitle: 'Generate a customer-aligned 3D gift',
+    generationDescription: 'Describe customer traits, brand elements, and the gifting context. Results are checked for printability first.',
+    uploadLabel: 'Reference images',
+    uploadHint: 'JPG or PNG, up to 5 images',
+    uploadChoose: 'Choose images',
+    uploaded: 'Selected',
+    sceneLabel: 'Gift use case',
+    scenePlaceholder: 'Choose a use case',
+    sceneCustomer: 'Customer visit / business keepsake',
+    sceneEvent: 'Exhibition / event gift',
+    sceneEmployee: 'Employee birthday / holiday gift',
+    featureLabel: 'Customer traits, brand elements, and model request',
+    featurePlaceholder: 'For example: combine speed, technology, and automotive elements in a desk-sized customer gift.',
+    generateNow: 'Generate 3D model concepts',
+    generating: 'Generating model concepts…',
+    generated: '3 candidate concepts generated',
+    generatedHint: 'These are local interaction demos. The production version will connect to the model service.',
+    useCandidate: 'Use this concept',
+    safetyTitle: 'Safety reminder',
+    safetyDescription: 'Customer images, logos, and attributes may be sensitive. Confirm that you have permission to use them.',
+    statusPending: 'Pending review',
+    statusPrinting: 'Printing',
+    statusReady: 'Ready for pickup',
+    allLocal: 'For internal employees only. Customer gifts, exhibition samples, and business print requests are tracked with access control.',
+  },
+} as const;
+
+type GiftCopy = (typeof copy)[GiftLanguage];
+
+type GiftModel = {
+  id: string;
+  name: string;
+  description: string;
+  category: 'business' | 'culture' | 'technology' | 'custom';
+  categoryLabel: string;
+  useCase: string;
+  finishLabel: string;
+  finish: 'paint' | 'bronze' | 'both';
+  color: string;
+  accent: string;
+};
+
+const modelCatalog: Record<GiftLanguage, GiftModel[]> = {
+  zh: [
+    { id: 'light-cube', name: '光立方科技纪念摆件', description: '以光固化成形层纹与联泰品牌基因为灵感，适合客户拜访和签约纪念。', category: 'business', categoryLabel: '商务礼赠', useCase: '客户拜访 · 签约纪念', finishLabel: '单色喷漆', finish: 'paint', color: 'from-[#083f7e] to-[#22d3ee]', accent: 'LT' },
+    { id: 'mechanical-lion', name: '机械醒狮桌面摆件', description: '传统醒狮与精密机械结构结合，兼具中国文化寓意和工业科技感。', category: 'culture', categoryLabel: '文化创意', useCase: '节日礼赠 · 海外客户', finishLabel: '铜做旧', finish: 'bronze', color: 'from-[#7c3f15] to-[#d6a15f]', accent: '醒狮' },
+    { id: 'city', name: '城市天际线纪念摆件', description: '可按客户所在城市定制地标轮廓，适合作为独特、有地域记忆的商务礼品。', category: 'culture', categoryLabel: '城市文化', useCase: '异地客户 · 城市活动', finishLabel: '单色喷漆 / 铜做旧', finish: 'both', color: 'from-[#164e63] to-[#38bdf8]', accent: 'CITY' },
+    { id: 'turbine', name: '未来涡轮结构摆件', description: '用参数化叶片与流线结构表达速度和精密制造，适合汽车与工业客户。', category: 'technology', categoryLabel: '工业科技', useCase: '汽车 · 装备制造', finishLabel: '单色喷漆', finish: 'paint', color: 'from-[#1e3a8a] to-[#60a5fa]', accent: '360°' },
+    { id: 'aerospace', name: '航天发动机剖面模型', description: '以复杂内流道和结构细节体现增材制造能力，适合技术交流和展会展示。', category: 'technology', categoryLabel: '行业模型', useCase: '航空航天 · 技术交流', finishLabel: '铜做旧', finish: 'bronze', color: 'from-[#334155] to-[#a16207]', accent: 'AM' },
+    { id: 'nameplate', name: '客户专属品牌铭牌', description: '支持客户名称、纪念日期与品牌元素个性化，快速形成一客一礼。', category: 'custom', categoryLabel: '个性定制', useCase: '周年纪念 · 重要客户', finishLabel: '单色喷漆 / 铜做旧', finish: 'both', color: 'from-[#075985] to-[#67e8f9]', accent: 'VIP' },
+  ],
+  en: [
+    { id: 'light-cube', name: 'Light Cube Technology Keepsake', description: 'Inspired by photopolymer layer lines and UnionTech brand DNA for customer visits and signing milestones.', category: 'business', categoryLabel: 'Business gift', useCase: 'Customer visit · Signing', finishLabel: 'Monochrome paint', finish: 'paint', color: 'from-[#083f7e] to-[#22d3ee]', accent: 'LT' },
+    { id: 'mechanical-lion', name: 'Mechanical Lion Desk Sculpture', description: 'A fusion of the Chinese guardian lion and precision mechanics with cultural meaning and industrial character.', category: 'culture', categoryLabel: 'Cultural design', useCase: 'Festival · Overseas customer', finishLabel: 'Antique bronze', finish: 'bronze', color: 'from-[#7c3f15] to-[#d6a15f]', accent: 'LION' },
+    { id: 'city', name: 'City Skyline Keepsake', description: 'Customize the landmark silhouette of a customer city for a memorable, location-specific business gift.', category: 'culture', categoryLabel: 'City culture', useCase: 'Regional customer · Event', finishLabel: 'Paint / antique bronze', finish: 'both', color: 'from-[#164e63] to-[#38bdf8]', accent: 'CITY' },
+    { id: 'turbine', name: 'Future Turbine Sculpture', description: 'Parametric blades and flowing geometry express speed and precision manufacturing for industrial customers.', category: 'technology', categoryLabel: 'Industrial technology', useCase: 'Automotive · Manufacturing', finishLabel: 'Monochrome paint', finish: 'paint', color: 'from-[#1e3a8a] to-[#60a5fa]', accent: '360°' },
+    { id: 'aerospace', name: 'Aerospace Engine Cutaway', description: 'Complex internal channels and structural detail showcase additive manufacturing for technical exchange.', category: 'technology', categoryLabel: 'Industry model', useCase: 'Aerospace · Technical exchange', finishLabel: 'Antique bronze', finish: 'bronze', color: 'from-[#334155] to-[#a16207]', accent: 'AM' },
+    { id: 'nameplate', name: 'Customer-Branded Nameplate', description: 'Personalize customer names, dates, and brand motifs to create a truly one-to-one gift.', category: 'custom', categoryLabel: 'Personalized', useCase: 'Anniversary · Key account', finishLabel: 'Paint / antique bronze', finish: 'both', color: 'from-[#075985] to-[#67e8f9]', accent: 'VIP' },
+  ],
+};
+
+const studioCopy = {
+  zh: {
+    eyebrow: '联泰内部客户礼赠平台',
+    welcome: '为客户挑一件真正与众不同的 3D 打印礼品',
+    welcomeDescription: '优先从已验证的礼品库直接选择；没有合适方案时，再用 AI 根据图片或客户画像快速定制。',
+    libraryTitle: '礼品库',
+    libraryDescription: '经过筛选的可打印礼品方案，可直接申请，也可基于现有模型进行客户化调整。',
+    searchPlaceholder: '搜索礼品、行业或使用场景',
+    all: '全部',
+    business: '商务礼赠',
+    culture: '文化创意',
+    technology: '工业科技',
+    custom: '个性定制',
+    available: '可申请打印',
+    finish: '推荐工艺',
+    noResult: '没有找到匹配的礼品，可尝试调整筛选或使用 AI 定制。',
+    aiTitle: '没有合适的？用 AI 定制客户专属礼品',
+    aiDescription: '选择一种创作方式。所有 3D 模型统一生成白膜，单色喷漆或铜做旧只用于效果预览和后续工艺。',
+    imageMode: '上传图片生成 3D 模型',
+    imageModeHint: '适合已有清晰物体、人物或礼品参考图',
+    briefMode: '按客户画像设计礼品',
+    briefModeHint: '先生成工艺渲染图，确认方案后再生成 3D 模型',
+    oneImage: '上传一张参考图片',
+    oneImageHint: '支持 JPG、PNG、WebP；建议主体完整、背景简洁',
+    replaceImage: '更换图片',
+    imageCompressing: '图片超过 5MB，正在自动压缩…',
+    imageCompressed: '图片已自动压缩，可以开始生成模型。',
+    imageCompressionFailed: '图片压缩失败，请选择小于 5MB 的 JPG、PNG 或 WebP 图片。',
+    imageTooLarge: '图片超过 5MB，无法提交，请更换图片。',
+    imageModelRule: '系统将提取主体造型并生成可打印白膜模型，不会把图片颜色写入模型。',
+    generateWhiteModel: '生成白膜 3D 模型',
+    generatingWhiteModel: '正在生成白膜模型…',
+    whiteModelReady: '白膜 3D 模型已生成',
+    whiteModelReadyHint: '下一步可检查模型、确定尺寸并提交打印申请。',
+    customerBrief: '描述礼品创意',
+    customerBriefPlaceholder: '例如：为新能源汽车客户的十周年合作纪念设计桌面摆件，体现速度、绿色能源与双方长期合作，避免复杂悬空结构。',
+    profileTags: '客户画像定位（下拉多选）',
+    profileAutoHint: '选择后会自动生成礼品创意文案，也可继续手动修改。',
+    renderFinish: '选择效果图工艺',
+    paint: '单色喷漆',
+    paintHint: '适合品牌色、现代感和科技类礼品',
+    paintColor: '选择喷漆颜色',
+    paintColorHint: '生成的摆件整体使用所选纯色，仅保留自然光影。',
+    customPaintColor: '自定义颜色',
+    paintColorRule: '单色喷漆效果不使用渐变、拼色或其他材质色。',
+    bronze: '铜做旧',
+    bronzeHint: '适合纪念性、文化类和高端桌面摆件',
+    processRule: '工艺选择只影响渲染效果与后处理要求，交付给打印环节的 3D 模型始终为白膜。',
+    generateRender: '生成礼品渲染图',
+    generatingRender: '正在生成礼品创意…',
+    renderReady: '选择一个满意的礼品方案',
+    renderReadyHint: '确认造型与工艺效果后，再生成对应的白膜 3D 模型。',
+    selectConcept: '选择此方案',
+    selected: '已选择',
+    editTitle: '继续编辑已生成图片',
+    editDescription: '选择方案后可继续描述修改要求；如只想修改局部，可上传一张同尺寸透明蒙版。每次编辑都会保留上一版。',
+    editPrompt: '修改要求',
+    editPlaceholder: '例如：保留整体造型，把底座改得更稳重，减少顶部细长结构，铜做旧效果更克制。',
+    optionalMask: '局部编辑蒙版（选填）',
+    maskHint: 'PNG，需与效果图尺寸一致并包含透明通道',
+    chooseMask: '选择蒙版',
+    editImage: '生成修改版本',
+    editingImage: '正在编辑图片…',
+    editedVersion: '已生成新的修改版本并自动选中',
+    generateFromRender: '根据选中方案生成白膜 3D 模型',
+    modelQueued: '白膜模型任务已提交，正在生成…',
+    downloadModel: '下载 STL 模型',
+    aiConfigError: 'AI 服务密钥尚未配置，请联系管理员完成环境变量配置。',
+    aiRequestError: 'AI 服务暂时不可用，请稍后重试。',
+    orders: '我的申请',
+    newRequest: '已有自己的模型？提交展会或业务样件申请',
+    newRequestButton: '提交其他打印需求',
+    modelPreview: '白膜模型预览',
+    openModelPreview: '点击查看并解析 3D 模型',
+    submitPrint: '提交打印申请',
+  },
+  en: {
+    eyebrow: 'UnionTech internal customer gifting',
+    welcome: 'Choose a distinctive 3D printed gift for your customer',
+    welcomeDescription: 'Start with a proven gift from the library. If nothing fits, use AI to customize from an image or customer profile.',
+    libraryTitle: 'Gift library',
+    libraryDescription: 'Reviewed, printable gift concepts ready to request or adapt for a specific customer.',
+    searchPlaceholder: 'Search gifts, industries, or use cases',
+    all: 'All',
+    business: 'Business gifts',
+    culture: 'Cultural design',
+    technology: 'Industrial tech',
+    custom: 'Personalized',
+    available: 'Ready to request',
+    finish: 'Recommended finish',
+    noResult: 'No matching gift. Adjust the filters or create a custom design with AI.',
+    aiTitle: 'Nothing fits? Create a customer-specific gift with AI',
+    aiDescription: 'Choose a creation path. Every 3D model is generated as a white base; paint and antique bronze apply only to visual preview and finishing.',
+    imageMode: 'Image to 3D model',
+    imageModeHint: 'Best for a clear object, person, or gift reference image',
+    briefMode: 'Design from customer profile',
+    briefModeHint: 'Generate a finish render first, then turn the approved concept into 3D',
+    oneImage: 'Upload one reference image',
+    oneImageHint: 'JPG, PNG, or WebP; use a complete subject and simple background',
+    replaceImage: 'Replace image',
+    imageCompressing: 'This image exceeds 5MB and is being compressed…',
+    imageCompressed: 'The image was compressed and is ready for 3D generation.',
+    imageCompressionFailed: 'Image compression failed. Choose a JPG, PNG, or WebP image smaller than 5MB.',
+    imageTooLarge: 'This image still exceeds 5MB and cannot be submitted.',
+    imageModelRule: 'The subject shape becomes a printable white model. Image colors are not embedded in the model.',
+    generateWhiteModel: 'Generate white 3D model',
+    generatingWhiteModel: 'Generating white model…',
+    whiteModelReady: 'White 3D model generated',
+    whiteModelReadyHint: 'Review the model, confirm dimensions, and submit a print request.',
+    customerBrief: 'Describe the gift idea',
+    customerBriefPlaceholder: 'Example: a desk sculpture for an EV customer’s 10-year partnership, expressing speed, green energy, and long-term collaboration without fragile overhangs.',
+    profileTags: 'Customer profile (multi-select)',
+    profileAutoHint: 'Selections automatically create the gift brief, which remains fully editable.',
+    renderFinish: 'Choose preview finish',
+    paint: 'Monochrome paint',
+    paintHint: 'For brand colors, modern styling, and technology gifts',
+    paintColor: 'Choose paint color',
+    paintColorHint: 'The entire gift uses the selected solid color, with natural light and shadow only.',
+    customPaintColor: 'Custom color',
+    paintColorRule: 'The monochrome render uses no gradients, accent colors, or secondary material colors.',
+    bronze: 'Antique bronze',
+    bronzeHint: 'For commemorative, cultural, and premium desk pieces',
+    processRule: 'Finish selection affects the render and post-processing brief only. The production 3D model always remains a white base.',
+    generateRender: 'Generate gift renders',
+    generatingRender: 'Generating gift concepts…',
+    renderReady: 'Choose your preferred gift concept',
+    renderReadyHint: 'Approve the form and finish before generating its white 3D model.',
+    selectConcept: 'Choose concept',
+    selected: 'Selected',
+    editTitle: 'Continue editing the generated image',
+    editDescription: 'Describe the next change after selecting a concept. Upload an optional same-size transparent mask for local edits. Each edit keeps the previous version.',
+    editPrompt: 'Edit instructions',
+    editPlaceholder: 'For example: keep the overall form, make the base more stable, reduce thin top structures, and use a subtler antique bronze finish.',
+    optionalMask: 'Local edit mask (optional)',
+    maskHint: 'PNG with the same dimensions and an alpha channel',
+    chooseMask: 'Choose mask',
+    editImage: 'Generate edited version',
+    editingImage: 'Editing image…',
+    editedVersion: 'A new edited version was generated and selected',
+    generateFromRender: 'Generate white 3D model from selected concept',
+    modelQueued: 'White model job submitted and generating…',
+    downloadModel: 'Download STL model',
+    aiConfigError: 'AI service credentials are not configured. Contact the administrator.',
+    aiRequestError: 'The AI service is temporarily unavailable. Try again later.',
+    orders: 'My requests',
+    newRequest: 'Already have a model? Submit an exhibition or business sample request',
+    newRequestButton: 'Submit another print request',
+    modelPreview: 'White model preview',
+    openModelPreview: 'Open and inspect the 3D model',
+    submitPrint: 'Submit print request',
+  },
+} as const;
+
+function LoginGate({
+  t,
+  onLogin,
+  onDevLogin,
+  showDevLogin,
+  loginPending,
+  errorCode,
+}: {
+  t: GiftCopy;
+  onLogin: () => void;
+  onDevLogin: () => void;
+  showDevLogin: boolean;
+  loginPending: boolean;
+  errorCode: string | null;
+}) {
+  const errorMessage = errorCode === 'configuration'
+    ? t.authConfigError
+    : errorCode === 'not_employee'
+      ? t.authNotEmployee
+      : errorCode === 'invalid_state'
+        ? t.authStateError
+        : errorCode
+          ? t.authLoginError
+          : null;
+
+  return (
+    <section className="mx-auto max-w-[1120px] px-5 py-10 md:py-14">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="relative overflow-hidden bg-[linear-gradient(135deg,#0b4f9c,#0891b2)] p-7 text-white md:p-10">
+            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full border-[24px] border-white/10" />
+            <div className="absolute -bottom-24 -left-12 h-56 w-56 rounded-full border-[20px] border-white/10" />
+            <div className="relative max-w-xl">
+              <div className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/10 px-3 py-2 text-xs font-black">
+                <Gift className="h-4 w-4" />
+                {t.pageTitle}
+              </div>
+              <h1 className="mt-7 text-4xl font-black leading-tight md:text-5xl">{t.pageTitle}</h1>
+              <p className="mt-4 max-w-lg text-lg font-bold leading-8 text-cyan-50">{t.pageSubtitle}</p>
+              <div className="mt-10 grid gap-3 text-sm font-bold text-cyan-50 md:grid-cols-3 lg:grid-cols-1">
+                <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 shrink-0" />{t.secureTitle}</div>
+                <div className="flex items-center gap-3"><Box className="h-5 w-5 shrink-0" />{t.libraryTitle}</div>
+                <div className="flex items-center gap-3"><WandSparkles className="h-5 w-5 shrink-0" />{t.generateTitle}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 md:p-8">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center rounded-md bg-cyan-50 text-[#0b4f9c]"><QrCode className="h-6 w-6" /></div>
+              <div>
+                <h2 className="text-xl font-black text-slate-950">{t.loginTitle}</h2>
+                <p className="mt-1 text-xs font-bold text-slate-500">{t.loginHint}</p>
+              </div>
+            </div>
+            <p className="mt-6 text-sm font-medium leading-6 text-slate-500">{t.loginDescription}</p>
+
+            <div className="mt-6 rounded-lg border border-cyan-100 bg-cyan-50/70 p-5 text-center">
+              <div className="mx-auto grid h-36 w-36 grid-cols-7 gap-1 rounded-md bg-white p-3 shadow-sm" aria-label={t.loginTitle}>
+                {Array.from({ length: 49 }, (_, index) => {
+                  const filled = (index * 17 + index * index) % 7 < 3 || [0, 1, 2, 7, 9, 14, 16, 21, 35, 36, 37, 42, 44, 47, 48].includes(index);
+                  return <span key={index} className={`rounded-[1px] ${filled ? 'bg-slate-900' : 'bg-slate-100'}`} />;
+                })}
+              </div>
+              <p className="mt-4 text-xs font-medium leading-5 text-slate-500">{t.localHint}</p>
+            </div>
+
+            {errorMessage ? <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700">{errorMessage}</div> : null}
+
+            <button
+              type="button"
+              onClick={onLogin}
+              disabled={loginPending}
+              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-wait disabled:opacity-70"
+              data-umami-event="gift_wecom_login_click"
+            >
+              <QrCode className="h-5 w-5" />
+              {loginPending ? t.loginStarting : t.loginButton}
+            </button>
+            {showDevLogin ? (
+              <button
+                type="button"
+                onClick={onDevLogin}
+                disabled={loginPending}
+                className="mt-3 inline-flex w-full items-center justify-center rounded-md border border-cyan-200 bg-cyan-50 px-4 py-2.5 text-xs font-black text-[#0b4f9c] transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-70"
+                data-umami-event="gift_local_login_click"
+              >
+                {t.localLogin}
+              </button>
+            ) : null}
+            <p className="mt-4 text-center text-[11px] font-medium leading-5 text-slate-400">{t.localHint}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GiftModelVisual({ model }: { model: GiftModel }) {
+  const Icon = model.category === 'business'
+    ? Building2
+    : model.category === 'culture'
+      ? Landmark
+      : model.category === 'technology'
+        ? model.id === 'turbine' ? Car : Cpu
+        : CircleUserRound;
+
+  return (
+    <div className={`relative h-52 overflow-hidden bg-gradient-to-br ${model.color} p-5 text-white`}>
+      <div className="absolute -right-12 -top-14 h-44 w-44 rounded-full border-[20px] border-white/10" />
+      <div className="absolute -bottom-24 left-10 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
+      <div className="absolute inset-x-5 top-5 flex items-center justify-between">
+        <span className="rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-black tracking-wide backdrop-blur">{model.categoryLabel}</span>
+        <span className="text-[10px] font-bold text-white/70">UnionTech 3D Print</span>
+      </div>
+      <div className="absolute inset-x-0 bottom-6 flex items-end justify-center">
+        <div className="relative grid h-28 w-36 place-items-center rounded-[50%_50%_42%_42%] border border-white/25 bg-white/15 shadow-[0_20px_45px_rgba(2,23,52,0.28)] backdrop-blur-sm">
+          <div className="absolute inset-x-5 bottom-2 h-3 rounded-full bg-slate-950/20 blur-sm" />
+          <Icon className="relative h-14 w-14 text-white/90" strokeWidth={1.45} />
+          <div className="absolute -right-6 -top-5 text-2xl font-black tracking-tight text-white/45">{model.accent}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModelCard({
+  model,
+  t,
+  labels,
+  onOrder,
+}: {
+  model: GiftModel;
+  t: GiftCopy;
+  labels: (typeof studioCopy)[GiftLanguage];
+  onOrder: (model: GiftModel) => void;
+}) {
+  return (
+    <article className="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:border-cyan-300 hover:shadow-lg">
+      <GiftModelVisual model={model} />
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-lg font-black text-slate-950">{model.name}</h3>
+          <span className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">{labels.available}</span>
+        </div>
+        <p className="mt-2 min-h-[72px] text-sm font-medium leading-6 text-slate-500">{model.description}</p>
+        <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-bold">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1.5 text-slate-600"><Tag className="h-3.5 w-3.5" />{model.useCase}</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 ${model.finish === 'bronze' ? 'bg-amber-50 text-amber-800' : 'bg-cyan-50 text-cyan-800'}`}><Palette className="h-3.5 w-3.5" />{model.finishLabel}</span>
+        </div>
+        <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
+          <span className="flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-cyan-600" />{t.printTime}</span>
+          <button type="button" onClick={() => onOrder(model)} className="inline-flex items-center gap-1 rounded-md bg-[#0b4f9c] px-3 py-2 font-black text-white transition hover:bg-[#083f7e]" data-umami-event="gift_existing_model_order_click">
+            {t.viewDetails}<ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: GiftCopy; onClose: () => void; onSubmitted: () => void }) {
+  const [submitted, setSubmitted] = useState(false);
+
+  function submit() {
+    setSubmitted(true);
+    onSubmitted();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45 p-5" role="dialog" aria-modal="true" aria-label={t.orderModalTitle}>
+      <div className="max-h-[calc(100vh-40px)] w-full max-w-xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-6">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">UnionAM Gifts</div>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">{t.orderModalTitle}</h2>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{model.name}</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={t.cancel}><X className="h-5 w-5" /></button>
+        </div>
+
+        {submitted ? (
+          <div className="p-8 text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-7 w-7" /></div>
+            <h3 className="mt-5 text-xl font-black text-slate-950">{t.orderSuccess}</h3>
+            <p className="mx-auto mt-2 max-w-sm text-sm font-medium leading-6 text-slate-500">{t.orderSuccessHint}</p>
+            <button type="button" onClick={onClose} className="mt-6 inline-flex h-11 items-center justify-center rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white">{t.cancel}</button>
+          </div>
+        ) : (
+          <div className="space-y-5 p-6">
+            <p className="rounded-md border border-cyan-100 bg-cyan-50 px-4 py-3 text-xs font-bold leading-5 text-cyan-900">{t.orderModalHint}</p>
+            <label className="block text-sm font-black text-slate-700">{t.quantity}<input type="number" min="1" defaultValue="1" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+            <div className="rounded-md border border-slate-200 px-4 py-3"><div className="text-xs font-black text-slate-500">{t.pickup}</div><div className="mt-1 text-sm font-bold text-slate-900">{t.pickupValue}</div></div>
+            <label className="block text-sm font-black text-slate-700">{t.note}<textarea rows={3} placeholder={t.notePlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+            <button type="button" onClick={submit} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e]" data-umami-event="gift_order_submit_click"><PackageCheck className="h-5 w-5" />{t.submitOrder}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type AiCreationMode = 'image' | 'brief';
+type FinishMode = 'paint' | 'bronze';
+type ImageModelStatus = 'idle' | 'generating' | 'ready';
+type BriefStatus = 'idle' | 'generating-render' | 'render-ready' | 'generating-model' | 'model-ready';
+
+const paintColorPresets = [
+  { hex: '#0B77B7', zh: '联泰蓝', en: 'UnionTech blue' },
+  { hex: '#0B4F9C', zh: '深海蓝', en: 'Deep blue' },
+  { hex: '#0891B2', zh: '科技青', en: 'Tech cyan' },
+  { hex: '#C62828', zh: '经典红', en: 'Classic red' },
+  { hex: '#EA580C', zh: '活力橙', en: 'Vibrant orange' },
+  { hex: '#15803D', zh: '森林绿', en: 'Forest green' },
+  { hex: '#E7E5E4', zh: '象牙白', en: 'Ivory' },
+  { hex: '#334155', zh: '碳灰色', en: 'Charcoal' },
+] as const;
+
+type ProfileGroupId = 'industry' | 'tone' | 'occasion' | 'recipient' | 'constraint';
+type ProfileSelections = Record<ProfileGroupId, string[]>;
+
+const emptyProfileSelections: ProfileSelections = {
+  industry: [],
+  tone: [],
+  occasion: [],
+  recipient: [],
+  constraint: [],
+};
+
+const profileGroups: { id: ProfileGroupId; zh: string; en: string; options: { id: string; zh: string; en: string }[] }[] = [
+  {
+    id: 'industry', zh: '客户所属行业', en: 'Customer industry', options: [
+      { id: 'automotive', zh: '汽车', en: 'Automotive' }, { id: 'aerospace', zh: '航空航天', en: 'Aerospace' },
+      { id: 'medical', zh: '医疗', en: 'Medical' }, { id: 'electronics', zh: '消费电子', en: 'Consumer electronics' },
+      { id: 'education', zh: '教育科研', en: 'Education and research' }, { id: 'culture-tourism', zh: '文化文旅', en: 'Culture and tourism' },
+      { id: 'finance', zh: '金融', en: 'Finance' }, { id: 'internet', zh: '互联网科技', en: 'Internet technology' },
+      { id: 'manufacturing', zh: '制造工业', en: 'Industrial manufacturing' }, { id: 'real-estate', zh: '建筑地产', en: 'Architecture and real estate' },
+      { id: 'retail', zh: '零售快消', en: 'Retail and FMCG' }, { id: 'government', zh: '政府事业单位', en: 'Government and public institutions' },
+    ],
+  },
+  {
+    id: 'tone', zh: '礼品风格调性', en: 'Gift style and tone', options: [
+      { id: 'technology', zh: '科技感', en: 'Technological' }, { id: 'professional', zh: '稳重商务', en: 'Professional' },
+      { id: 'youthful', zh: '年轻活力', en: 'Youthful' }, { id: 'premium', zh: '高端典雅', en: 'Premium and elegant' },
+      { id: 'chinese-culture', zh: '中国文化', en: 'Chinese culture' }, { id: 'futuristic', zh: '未来感', en: 'Futuristic' },
+      { id: 'minimal-modern', zh: '极简现代', en: 'Minimal and modern' }, { id: 'guochao', zh: '国潮国风', en: 'Modern Chinese style' },
+      { id: 'light-luxury', zh: '轻奢质感', en: 'Light luxury' }, { id: 'natural', zh: '自然简约', en: 'Natural and simple' },
+    ],
+  },
+  {
+    id: 'occasion', zh: '赠礼业务场景', en: 'Gifting occasion', options: [
+      { id: 'first-visit', zh: '首次拜访', en: 'First visit' }, { id: 'signing', zh: '签约纪念', en: 'Contract signing' },
+      { id: 'anniversary', zh: '周年庆', en: 'Anniversary' }, { id: 'exhibition', zh: '展会活动', en: 'Exhibition' },
+      { id: 'festival', zh: '节日礼赠', en: 'Festival gift' }, { id: 'key-account', zh: '重要客户', en: 'Key account' },
+      { id: 'appreciation', zh: '客户答谢', en: 'Customer appreciation' }, { id: 'project-completion', zh: '项目竣工', en: 'Project completion' },
+      { id: 'annual-meeting', zh: '年会纪念', en: 'Annual meeting' }, { id: 'product-launch', zh: '新品发布', en: 'Product launch' },
+    ],
+  },
+  {
+    id: 'recipient', zh: '收礼人画像', en: 'Recipient profile', options: [
+      { id: 'executive', zh: '高层管理者', en: 'Senior executive' }, { id: 'middle-manager', zh: '中层管理者', en: 'Middle manager' },
+      { id: 'employee', zh: '基层员工', en: 'Employee' }, { id: 'neutral', zh: '通用中性', en: 'Gender-neutral' },
+      { id: 'male', zh: '男性偏好', en: 'Masculine preference' }, { id: 'female', zh: '女性偏好', en: 'Feminine preference' },
+    ],
+  },
+  {
+    id: 'constraint', zh: '礼品物理约束', en: 'Physical constraints', options: [
+      { id: 'desk-object', zh: '桌面摆件', en: 'Desk ornament' }, { id: 'award', zh: '奖牌纪念', en: 'Commemorative award' },
+      { id: 'logo-sculpture', zh: '立体 Logo 雕塑', en: '3D logo sculpture' }, { id: 'art-installation', zh: '小型艺术装置', en: 'Small art object' },
+      { id: 'metal-look', zh: '金属质感', en: 'Metallic appearance' }, { id: 'matte-resin', zh: '哑光树脂', en: 'Matte resin' },
+      { id: 'frosted', zh: '磨砂', en: 'Frosted finish' }, { id: 'glossy', zh: '亮光', en: 'Glossy finish' },
+      { id: 'no-hollow', zh: '避免镂空', en: 'Avoid hollow structures' }, { id: 'no-overhang', zh: '避免悬空结构', en: 'Avoid unsupported overhangs' },
+      { id: 'one-piece', zh: '一体成型', en: 'Single-piece construction' },
+    ],
+  },
+];
+
+function profileLabels(language: GiftLanguage, selections: ProfileSelections, groupId?: ProfileGroupId) {
+  return profileGroups
+    .filter((group) => !groupId || group.id === groupId)
+    .flatMap((group) => group.options.filter((option) => selections[group.id].includes(option.id)).map((option) => option[language]));
+}
+
+function buildGiftBrief(language: GiftLanguage, selections: ProfileSelections) {
+  const industries = profileLabels(language, selections, 'industry');
+  const tones = profileLabels(language, selections, 'tone');
+  const occasions = profileLabels(language, selections, 'occasion');
+  const recipients = profileLabels(language, selections, 'recipient');
+  const constraints = profileLabels(language, selections, 'constraint');
+  if (![industries, tones, occasions, recipients, constraints].some((items) => items.length)) return '';
+  if (language === 'zh') {
+    return `为${industries.length ? industries.join('、') : '目标行业'}客户设计一件用于${occasions.length ? occasions.join('、') : '商务礼赠'}的专属 3D 打印礼品，主要面向${recipients.length ? recipients.join('、') : '通用商务人群'}。整体风格体现${tones.length ? tones.join('、') : '简洁、专业与高级感'}，结合客户行业特征与增材制造语言，形成独一无二、具有纪念意义的礼品造型。${constraints.length ? `物理形态与制作要求：${constraints.join('、')}。` : '造型需结构完整、底座稳定，适合树脂 3D 打印和后续表面处理。'}`;
+  }
+  return `Design a customer-specific 3D printed gift for ${industries.length ? industries.join(', ') : 'the target industry'}, intended for ${occasions.length ? occasions.join(', ') : 'business gifting'} and primarily suited to ${recipients.length ? recipients.join(', ') : 'a general business audience'}. The design should feel ${tones.length ? tones.join(', ') : 'clean, professional, and premium'}, combining recognizable industry characteristics with an additive-manufacturing design language to create a distinctive commemorative object. ${constraints.length ? `Physical form and production requirements: ${constraints.join(', ')}.` : 'Use a complete form, stable base, and geometry suitable for resin 3D printing and post-processing.'}`;
+}
+
+function ProfileDropdown({ group, language, selected, open, onToggleOpen, onToggleOption }: {
+  group: (typeof profileGroups)[number];
+  language: GiftLanguage;
+  selected: string[];
+  open: boolean;
+  onToggleOpen: () => void;
+  onToggleOption: (optionId: string) => void;
+}) {
+  const selectedLabels = group.options.filter((option) => selected.includes(option.id)).map((option) => option[language]);
+  const summary = selectedLabels.length
+    ? `${selectedLabels.slice(0, 2).join(language === 'zh' ? '、' : ', ')}${selectedLabels.length > 2 ? ` +${selectedLabels.length - 2}` : ''}`
+    : language === 'zh' ? '请选择，可多选' : 'Select multiple';
+  return (
+    <div className={`relative ${open ? 'z-20' : ''}`}>
+      <button type="button" onClick={onToggleOpen} aria-expanded={open} className={`flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 text-left transition ${open || selected.length ? 'border-cyan-400 shadow-sm' : 'border-slate-200 hover:border-cyan-300'}`}>
+        <span className="min-w-0"><span className="block text-xs font-black text-slate-800">{group[language]}</span><span className={`mt-1 block truncate text-[11px] font-bold ${selected.length ? 'text-[#0b4f9c]' : 'text-slate-400'}`}>{summary}</span></span>
+        <span className="flex shrink-0 items-center gap-1.5">{selected.length ? <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#0b4f9c] px-1 text-[10px] font-black text-white">{selected.length}</span> : null}<ChevronDown className={`h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} /></span>
+      </button>
+      {open ? <div className="absolute left-0 top-[calc(100%+0.4rem)] w-full min-w-[300px] rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.16)]"><div className="max-h-64 overflow-y-auto pr-1"><div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">{group.options.map((option) => { const active = selected.includes(option.id); return <button key={option.id} type="button" onClick={() => onToggleOption(option.id)} className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[11px] font-bold transition ${active ? 'border-cyan-300 bg-cyan-50 text-[#0b4f9c]' : 'border-transparent bg-slate-50 text-slate-600 hover:border-slate-200 hover:bg-white'}`}><span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${active ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white' : 'border-slate-300 bg-white text-transparent'}`}><Check className="h-3 w-3" strokeWidth={3} /></span><span>{option[language]}</span></button>; })}</div></div></div> : null}
+    </div>
+  );
+}
+
+function WhiteModelResult({ labels, onOrder, model, onPreview }: { labels: (typeof studioCopy)[GiftLanguage]; onOrder: () => void; model?: GeneratedGiftModel; onPreview: () => void }) {
+  return (
+    <div className="mt-6 grid gap-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-5 md:grid-cols-[220px_minmax(0,1fr)]">
+      <button type="button" onClick={onPreview} disabled={!model} className="group relative grid min-h-44 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-[radial-gradient(circle_at_50%_30%,#ffffff_0%,#f8fafc_38%,#dbe4ee_100%)] text-left transition hover:border-cyan-400 hover:shadow-md disabled:cursor-default">
+        {model?.previewImageUrl ? <img src={model.previewImageUrl} alt={labels.modelPreview} className="absolute inset-0 h-full w-full object-contain transition duration-300 group-hover:scale-[1.02]" /> : <><div className="absolute bottom-7 h-6 w-32 rounded-full bg-slate-400/25 blur-md" /><div className="relative grid h-28 w-28 place-items-center rounded-[42%_58%_46%_54%] border border-white bg-white shadow-[0_20px_45px_rgba(71,85,105,0.2)]"><Layers3 className="h-14 w-14 text-slate-300" strokeWidth={1.3} /></div></>}
+        <span className="absolute left-3 top-3 rounded bg-white/90 px-2 py-1 text-[10px] font-black text-slate-500">{labels.modelPreview}</span>
+        {model ? <span className="absolute bottom-3 left-3 right-3 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-950/70 px-3 py-2 text-[11px] font-black text-white opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100"><Maximize2 className="h-3.5 w-3.5" />{labels.openModelPreview}</span> : null}
+      </button>
+      <div className="self-center">
+        <div className="flex items-center gap-2 text-emerald-800"><CheckCircle2 className="h-5 w-5" /><h3 className="text-base font-black">{labels.whiteModelReady}</h3></div>
+        <p className="mt-2 text-sm font-medium leading-6 text-emerald-900/70">{labels.whiteModelReadyHint}</p>
+        <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-bold text-slate-600">
+          <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">White base</span>
+          <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">Printable geometry</span>
+          <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5">STL / GLB</span>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          {model ? <a href={model.modelUrl} download={`unionam-gift.${model.modelType}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-cyan-200 bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50" data-umami-event="gift_ai_model_download_click"><Layers3 className="h-4 w-4" />{labels.downloadModel}</a> : null}
+          <button type="button" onClick={onOrder} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white transition hover:bg-[#083f7e]" data-umami-event="gift_ai_model_order_click"><PackageCheck className="h-4 w-4" />{labels.submitPrint}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RenderConcept({ finish, index, source, selected, onSelect, labels }: { finish: FinishMode; index: number; source?: string; selected: boolean; onSelect: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
+  const bronze = finish === 'bronze';
+  return (
+    <button type="button" onClick={onSelect} className={`overflow-hidden rounded-xl border bg-white p-3 text-left transition ${selected ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-slate-200 hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md'}`} data-umami-event="gift_ai_render_select_click">
+      <div className={`relative grid aspect-[4/3] place-items-center overflow-hidden rounded-lg ${source ? 'bg-slate-50' : bronze ? 'bg-[radial-gradient(circle_at_40%_25%,#f4d29e_0%,#9a5a27_46%,#3f2519_100%)]' : 'bg-[radial-gradient(circle_at_40%_25%,#dff8ff_0%,#3f9fd1_48%,#073763_100%)]'}`}>
+        {source ? <img src={source} alt={`${labels.selectConcept} ${index + 1}`} className="absolute inset-0 h-full w-full object-contain" /> : null}
+        {!source ? <><div className="absolute -right-8 -top-8 h-24 w-24 rounded-full border-[12px] border-white/10" /><div className="absolute bottom-5 h-5 w-28 rounded-full bg-slate-950/25 blur-md" /></> : null}
+        {!source ? <div className={`relative grid place-items-center border shadow-2xl ${index === 0 ? 'h-24 w-28 rounded-[44%_56%_38%_62%]' : index === 1 ? 'h-28 w-24 rounded-[58%_42%_52%_48%]' : 'h-24 w-32 rounded-[35%_65%_54%_46%]'} ${bronze ? 'border-amber-200/50 bg-gradient-to-br from-[#e2b978] via-[#9a5a27] to-[#54331f] text-amber-100' : 'border-white/40 bg-gradient-to-br from-white via-[#3bc2e8] to-[#0b4f9c] text-white'}`}>
+          {index === 0 ? <Sparkles className="h-10 w-10" /> : index === 1 ? <Building2 className="h-10 w-10" /> : <Boxes className="h-10 w-10" />}
+        </div> : null}
+        <span className="absolute left-3 top-3 rounded bg-slate-950/25 px-2 py-1 text-[10px] font-black text-white backdrop-blur">0{index + 1}</span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="text-xs font-black text-slate-800">{selected ? labels.selected : labels.selectConcept}</span>
+        <span className={`grid h-5 w-5 place-items-center rounded-full border ${selected ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white' : 'border-slate-300 text-transparent'}`}><Check className="h-3.5 w-3.5" /></span>
+      </div>
+    </button>
+  );
+}
+
+type GiftImageResult = { dataUrl?: string; url?: string };
+type GiftAiClientError = { configuration: boolean; reason?: string; message?: string };
+
+const MODEL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const MODEL_IMAGE_TARGET_BYTES = Math.floor(4.5 * 1024 * 1024);
+
+function canvasBlob(canvas: HTMLCanvasElement, type: 'image/webp' | 'image/jpeg', quality: number) {
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function compressModelImage(file: File) {
+  if (file.size <= MODEL_IMAGE_MAX_BYTES) return { file, compressed: false };
+
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const longestEdge = Math.max(bitmap.width, bitmap.height);
+  const maxEdges = [2048, 1600, 1280, 1024, 768];
+  const qualities = [0.9, 0.82, 0.74, 0.66, 0.58];
+  let smallest: Blob | null = null;
+
+  try {
+    for (const maxEdge of maxEdges) {
+      const scale = Math.min(1, maxEdge / longestEdge);
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) throw new Error('Canvas is unavailable.');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(bitmap, 0, 0, width, height);
+
+      for (const quality of qualities) {
+        let blob = await canvasBlob(canvas, 'image/webp', quality);
+        if (!blob || blob.type !== 'image/webp') blob = await canvasBlob(canvas, 'image/jpeg', quality);
+        if (!blob) continue;
+        if (!smallest || blob.size < smallest.size) smallest = blob;
+        if (blob.size <= MODEL_IMAGE_TARGET_BYTES) {
+          const extension = blob.type === 'image/webp' ? 'webp' : 'jpg';
+          const baseName = file.name.replace(/\.[^.]+$/, '') || 'gift-reference';
+          return { file: new File([blob], `${baseName}.${extension}`, { type: blob.type, lastModified: Date.now() }), compressed: true };
+        }
+      }
+    }
+  } finally {
+    bitmap.close();
+  }
+
+  if (smallest && smallest.size <= MODEL_IMAGE_MAX_BYTES) {
+    const extension = smallest.type === 'image/webp' ? 'webp' : 'jpg';
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'gift-reference';
+    return { file: new File([smallest], `${baseName}.${extension}`, { type: smallest.type, lastModified: Date.now() }), compressed: true };
+  }
+  throw new Error('Image compression could not reach the upload limit.');
+}
+
+function giftImageSource(image: GiftImageResult | undefined) {
+  return image?.dataUrl || image?.url || '';
+}
+
+async function imageSourceToFile(source: string, name: string) {
+  const response = await fetch(source);
+  if (!response.ok) throw new Error('Unable to read generated image.');
+  const blob = await response.blob();
+  return new File([blob], name, { type: blob.type || 'image/png' });
+}
+
+async function apiErrorMessage(response: Response) {
+  const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
+  return { configuration: payload.error === 'configuration', reason: payload.error, message: payload.message } satisfies GiftAiClientError;
+}
+
+function renderPrompt(language: GiftLanguage, brief: string, tags: string[], finish: FinishMode, paintColor: string) {
+  const finishText = finish === 'paint'
+    ? `single-color matte spray paint finish in exactly ${paintColor}. The entire object must use this one uniform solid paint color; no gradients, no color blocking, no accent colors, no metallic parts, and no secondary material colors. Natural lighting and shadows may change brightness only`
+    : 'restrained antique bronze finish, subtle patina, premium commemorative appearance';
+  const request = brief.trim() || (language === 'zh' ? '根据客户画像设计一件商务礼品' : 'Design a business gift from the customer profile');
+  return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, 3D-printable desk gift as a product render. ${finishText}. Plain white or light-gray background. One centered object occupying more than 70% of the image. Stable base, closed solid form, clear silhouette, manufacturable thickness, no thin floating structures, no packaging, no hands, no text, no logo, no watermark. Three-quarter front view. The shape must be suitable for image-to-3D generation and resin 3D printing.`;
+}
+
+function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: (model: GiftModel) => void }) {
+  const labels = studioCopy[language];
+  const [mode, setMode] = useState<AiCreationMode>('image');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imagePreparing, setImagePreparing] = useState(false);
+  const [imagePreparationNotice, setImagePreparationNotice] = useState<string | null>(null);
+  const imagePreparationIdRef = useRef(0);
+  const [imageStatus, setImageStatus] = useState<ImageModelStatus>('idle');
+  const [imageModel, setImageModel] = useState<GeneratedGiftModel>();
+  const [brief, setBrief] = useState('');
+  const [briefAutoGenerated, setBriefAutoGenerated] = useState(false);
+  const [profileSelections, setProfileSelections] = useState<ProfileSelections>(() => ({ ...emptyProfileSelections }));
+  const [openProfileGroup, setOpenProfileGroup] = useState<ProfileGroupId | null>(null);
+  const profileMenusRef = useRef<HTMLDivElement>(null);
+  const [finish, setFinish] = useState<FinishMode>('paint');
+  const [paintColor, setPaintColor] = useState('#0B77B7');
+  const [paintColorInput, setPaintColorInput] = useState('#0B77B7');
+  const [paintMenuOpen, setPaintMenuOpen] = useState(false);
+  const paintMenuRef = useRef<HTMLDivElement>(null);
+  const [briefStatus, setBriefStatus] = useState<BriefStatus>('idle');
+  const [renderImages, setRenderImages] = useState<GiftImageResult[]>([]);
+  const [selectedRender, setSelectedRender] = useState<number | null>(null);
+  const [editPrompt, setEditPrompt] = useState('');
+  const [editMask, setEditMask] = useState<File | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editNotice, setEditNotice] = useState(false);
+  const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
+  const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
+  const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
+  const selectedProfileTags = profileLabels(language, profileSelections);
+
+  useEffect(() => () => {
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
+  }, [imageUrl]);
+
+  useEffect(() => {
+    if (!paintMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!paintMenuRef.current?.contains(event.target as Node)) setPaintMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPaintMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [paintMenuOpen]);
+
+  useEffect(() => {
+    if (!openProfileGroup) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!profileMenusRef.current?.contains(event.target as Node)) setOpenProfileGroup(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenProfileGroup(null);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [openProfileGroup]);
+
+  useEffect(() => {
+    if (briefAutoGenerated) setBrief(buildGiftBrief(language, profileSelections));
+  }, [language]);
+
+  function clearAiError() {
+    setAiError(null);
+    setEditNotice(false);
+  }
+
+  async function chooseImage(file: File | undefined) {
+    const preparationId = imagePreparationIdRef.current + 1;
+    imagePreparationIdRef.current = preparationId;
+    setImageFile(null);
+    setImageUrl(file ? URL.createObjectURL(file) : null);
+    setImagePreparing(Boolean(file && file.size > MODEL_IMAGE_MAX_BYTES));
+    setImagePreparationNotice(file && file.size > MODEL_IMAGE_MAX_BYTES ? labels.imageCompressing : null);
+    setImageStatus('idle');
+    setImageModel(undefined);
+    clearAiError();
+    if (!file) return;
+    try {
+      const prepared = await compressModelImage(file);
+      if (imagePreparationIdRef.current !== preparationId) return;
+      setImageFile(prepared.file);
+      if (prepared.compressed) setImageUrl(URL.createObjectURL(prepared.file));
+      setImagePreparationNotice(prepared.compressed ? labels.imageCompressed : null);
+    } catch {
+      if (imagePreparationIdRef.current !== preparationId) return;
+      setImageFile(null);
+      setImagePreparationNotice(null);
+      setAiError({ configuration: false, reason: 'validation', message: labels.imageCompressionFailed });
+    } finally {
+      if (imagePreparationIdRef.current === preparationId) setImagePreparing(false);
+    }
+  }
+
+  async function waitForWhiteModel(file: File) {
+    let prepared: Awaited<ReturnType<typeof compressModelImage>>;
+    try {
+      prepared = await compressModelImage(file);
+    } catch {
+      throw { configuration: false, reason: 'validation', message: labels.imageCompressionFailed } satisfies GiftAiClientError;
+    }
+    if (prepared.file.size > MODEL_IMAGE_MAX_BYTES) throw { configuration: false, reason: 'validation', message: labels.imageTooLarge } satisfies GiftAiClientError;
+    const formData = new FormData();
+    formData.set('image', prepared.file, prepared.file.name || 'gift-reference.webp');
+    const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin' });
+    if (!submitResponse.ok) {
+      const error = await apiErrorMessage(submitResponse);
+      if (error.reason === 'validation' && error.message?.includes('5MB')) error.message = labels.imageTooLarge;
+      throw error;
+    }
+    const submitPayload = await submitResponse.json() as { job?: { id?: string } };
+    if (!submitPayload.job?.id) throw { configuration: false, message: 'Model service did not return a job ID.' };
+
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 5000));
+      const queryResponse = await fetch(`/api/gift/ai/3d/query?id=${encodeURIComponent(submitPayload.job.id)}`, { cache: 'no-store', credentials: 'same-origin' });
+      if (!queryResponse.ok) throw await apiErrorMessage(queryResponse);
+      const queryPayload = await queryResponse.json() as { job?: { status?: string; models?: { type: string; url: string; previewImageUrl?: string }[] } };
+      if (queryPayload.job?.status === 'completed') {
+        const models = queryPayload.job.models || [];
+        const preferred = models.find((model) => model.type.toLowerCase() === 'stl') || models.find((model) => ['glb', 'gltf'].includes(model.type.toLowerCase()));
+        if (!preferred) throw { configuration: false, message: 'Model service did not return a supported model.' };
+        const modelType = preferred.type.toLowerCase();
+        if (modelType !== 'stl' && modelType !== 'glb' && modelType !== 'gltf') throw { configuration: false, message: 'Unsupported generated model format.' };
+        const assetBase = `/api/gift/ai/3d/file?id=${encodeURIComponent(submitPayload.job.id)}`;
+        return {
+          jobId: submitPayload.job.id,
+          modelType,
+          modelUrl: `${assetBase}&type=${modelType}`,
+          previewImageUrl: models.some((model) => model.previewImageUrl) ? `${assetBase}&type=preview` : undefined,
+        } satisfies GeneratedGiftModel;
+      }
+      if (queryPayload.job?.status === 'failed') throw { configuration: false, message: 'Model generation failed.' };
+    }
+    throw { configuration: false, message: 'Model generation timed out.' };
+  }
+
+  async function generateImageModel() {
+    if (!imageFile) return;
+    clearAiError();
+    setImageStatus('generating');
+    try {
+      setImageModel(await waitForWhiteModel(imageFile));
+      setImageStatus('ready');
+    } catch (error) {
+      setImageStatus('idle');
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+    }
+  }
+
+  function resetBriefResults() {
+    setBriefStatus('idle');
+    setRenderImages([]);
+    setSelectedRender(null);
+    setBriefModel(undefined);
+    clearAiError();
+  }
+
+  function toggleProfileOption(groupId: ProfileGroupId, optionId: string) {
+    const currentGroup = profileSelections[groupId];
+    const nextSelections = {
+      ...profileSelections,
+      [groupId]: currentGroup.includes(optionId) ? currentGroup.filter((item) => item !== optionId) : [...currentGroup, optionId],
+    };
+    setProfileSelections(nextSelections);
+    setBrief(buildGiftBrief(language, nextSelections));
+    setBriefAutoGenerated(true);
+    resetBriefResults();
+  }
+
+  function choosePaintColor(value: string) {
+    const normalized = value.toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(normalized)) return;
+    setPaintColor(normalized);
+    setPaintColorInput(normalized);
+    resetBriefResults();
+  }
+
+  async function generateRenders() {
+    if (!brief.trim() && selectedProfileTags.length === 0) return;
+    clearAiError();
+    setBriefStatus('generating-render');
+    setRenderImages([]);
+    setSelectedRender(null);
+    try {
+      const response = await fetch('/api/gift/ai/render', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: renderPrompt(language, brief, selectedProfileTags, finish, paintColor) }),
+      });
+      if (!response.ok) throw await apiErrorMessage(response);
+      const payload = await response.json() as { images?: GiftImageResult[] };
+      if (!payload.images?.length) throw { configuration: false, message: 'Image service did not return images.' };
+      setRenderImages(payload.images);
+      setBriefStatus('render-ready');
+    } catch (error) {
+      setBriefStatus('idle');
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+    }
+  }
+
+  async function editSelectedImage() {
+    const source = selectedRender === null ? '' : giftImageSource(renderImages[selectedRender]);
+    if (!source || !editPrompt.trim()) return;
+    clearAiError();
+    setEditing(true);
+    try {
+      const sourceFile = await imageSourceToFile(source, 'gift-render.png');
+      const formData = new FormData();
+      formData.set('image', sourceFile);
+      const finishConstraint = finish === 'paint'
+        ? `Keep the entire gift in exactly one uniform solid paint color ${paintColor}. Do not introduce gradients, color blocking, accent colors, metallic parts, or secondary material colors.`
+        : 'Keep the restrained antique bronze material and subtle patina consistent across the gift.';
+      formData.set('prompt', `${editPrompt.trim()}\n${finishConstraint}`);
+      if (editMask) formData.set('mask', editMask);
+      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin' });
+      if (!response.ok) throw await apiErrorMessage(response);
+      const payload = await response.json() as { image?: GiftImageResult };
+      if (!giftImageSource(payload.image)) throw { configuration: false, message: 'Image service did not return an edited image.' };
+      setRenderImages((current) => [...current, payload.image!]);
+      setSelectedRender(renderImages.length);
+      setEditPrompt('');
+      setEditMask(null);
+      setEditNotice(true);
+    } catch (error) {
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  async function generateBriefModel() {
+    const source = selectedRender === null ? '' : giftImageSource(renderImages[selectedRender]);
+    if (!source) return;
+    clearAiError();
+    setBriefStatus('generating-model');
+    try {
+      const file = await imageSourceToFile(source, 'selected-gift-render.png');
+      setBriefModel(await waitForWhiteModel(file));
+      setBriefStatus('model-ready');
+    } catch (error) {
+      setBriefStatus('render-ready');
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+    }
+  }
+
+  const generatedModel: GiftModel = {
+    id: 'ai-generated',
+    name: language === 'zh' ? 'AI 客户专属礼品' : 'AI customer-specific gift',
+    description: brief || (language === 'zh' ? '根据参考图片生成的客户专属白膜模型。' : 'A customer-specific white model generated from the reference.'),
+    category: 'custom',
+    categoryLabel: labels.custom,
+    useCase: selectedProfileTags.slice(0, 2).join(' · ') || labels.custom,
+    finishLabel: finish === 'paint' ? `${labels.paint} · ${paintColor}` : labels.bronze,
+    finish,
+    color: finish === 'paint' ? 'from-[#075985] to-[#67e8f9]' : 'from-[#6b3518] to-[#d6a15f]',
+    accent: 'AI',
+  };
+
+  return (
+    <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
+      <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className={`flex items-start gap-4 p-5 text-left transition md:p-6 ${mode === 'image' ? 'bg-cyan-50/70 shadow-[inset_0_-3px_0_#0891b2]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'image' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" onClick={() => setMode('brief')} className={`flex items-start gap-4 border-t border-slate-200 p-5 text-left transition md:border-l md:border-t-0 md:p-6 ${mode === 'brief' ? 'bg-blue-50/70 shadow-[inset_0_-3px_0_#2563eb]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'brief' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
+
+      {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{aiError.reason !== 'validation' && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
+
+      {mode === 'image' ? <div className="p-6 md:p-8"><div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"><label className="group relative flex min-h-72 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-cyan-300 bg-cyan-50/40 p-5 text-center transition hover:border-cyan-500 hover:bg-cyan-50"><input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void chooseImage(file); }} />{imageUrl ? <img src={imageUrl} alt={labels.oneImage} className="absolute inset-0 h-full w-full bg-white object-contain" /> : null}<div className={`relative ${imageUrl ? 'absolute bottom-4 rounded-md bg-slate-950/70 px-4 py-2 text-white backdrop-blur' : ''}`}>{!imageUrl ? <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-white text-[#0b4f9c] shadow-sm"><UploadCloud className="h-7 w-7" /></div> : null}<span className={`block text-sm font-black ${imageUrl ? 'text-white' : 'mt-4 text-slate-800'}`}>{imageUrl ? labels.replaceImage : labels.oneImage}</span>{!imageUrl ? <span className="mt-2 block max-w-xs text-xs font-medium leading-5 text-slate-500">{labels.oneImageHint}</span> : null}</div></label><div className="self-center">{imagePreparationNotice ? <div className={`mb-4 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-bold ${imagePreparing ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{imagePreparing ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}{imagePreparationNotice}</div> : null}<div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5"><div className="flex items-start gap-3"><Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">Image → White 3D Model</h3><p className="mt-1 text-sm font-medium leading-6 text-slate-600">{labels.imageModelRule}</p></div></div></div><button type="button" onClick={generateImageModel} disabled={!imageFile || imagePreparing || imageStatus === 'generating'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_image_to_3d_click">{imagePreparing || imageStatus === 'generating' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{imagePreparing ? labels.imageCompressing : imageStatus === 'generating' ? labels.modelQueued : labels.generateWhiteModel}</button></div></div>{imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder(generatedModel)} /> : null}</div> : (
+        <div className="p-6 md:p-8">
+          <div className="grid gap-7 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]"><div><label className="block text-sm font-black text-slate-700">{labels.customerBrief}<textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={5} placeholder={labels.customerBriefPlaceholder} className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium leading-6 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><div className="mt-6 flex flex-wrap items-end justify-between gap-2"><div className="text-sm font-black text-slate-700">{labels.profileTags}</div><div className="text-[11px] font-bold text-slate-400">{labels.profileAutoHint}</div></div><div ref={profileMenusRef} className="mt-3 grid gap-2 sm:grid-cols-2">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div></div><div><div className="text-sm font-black text-slate-700">{labels.renderFinish}</div><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div ref={paintMenuRef} className={`relative ${paintMenuOpen ? 'z-30' : ''}`}><button type="button" aria-expanded={paintMenuOpen} aria-haspopup="dialog" onClick={() => { const switchingToPaint = finish !== 'paint'; setFinish('paint'); setOpenProfileGroup(null); setPaintMenuOpen((current) => switchingToPaint || !current); if (switchingToPaint) resetBriefResults(); }} className={`h-full w-full rounded-xl border p-4 text-left transition ${finish === 'paint' ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:border-cyan-300'}`}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full shadow-inner" style={{ backgroundColor: paintColor }} />{labels.paint}</div><div className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-slate-500"><span>{paintColor}</span><ChevronDown className={`h-4 w-4 transition ${paintMenuOpen ? 'rotate-180' : ''}`} /></div></div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.paintHint}</p></button>{finish === 'paint' && paintMenuOpen ? <div role="dialog" aria-label={labels.paintColor} className="absolute left-0 top-[calc(100%+0.5rem)] w-full min-w-[280px] rounded-xl border border-cyan-200 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{labels.paintColor}</div><p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{labels.paintColorHint}</p></div><span className="h-8 w-8 shrink-0 rounded-full border-4 border-white shadow" style={{ backgroundColor: paintColor }} /></div><div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => { choosePaintColor(preset.hex); setPaintMenuOpen(false); }} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-7 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div><div className="mt-3 flex items-center gap-2"><label className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 font-mono text-[11px] font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div><p className="mt-2 text-[10px] font-bold leading-4 text-slate-400">{labels.paintColorRule}</p></div> : null}</div><button type="button" onClick={() => { const switchingToBronze = finish !== 'bronze'; setFinish('bronze'); setPaintMenuOpen(false); if (switchingToBronze) resetBriefResults(); }} className={`rounded-xl border p-4 text-left transition ${finish === 'bronze' ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full bg-gradient-to-br from-[#d9a963] to-[#6b3518] shadow-inner" />{labels.bronze}</div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.bronzeHint}</p></button></div>
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-bold leading-5 text-amber-900"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div></div>
+
+          {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => { setSelectedRender(index); setEditNotice(false); }} labels={labels} />)}</div>
+
+            {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}</div></div> : null}
+
+            <button type="button" onClick={generateBriefModel} disabled={selectedRender === null || briefStatus === 'generating-model'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_to_3d_click">{briefStatus === 'generating-model' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{briefStatus === 'generating-model' ? labels.modelQueued : labels.generateFromRender}</button></div> : null}
+          {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder(generatedModel)} /> : null}
+        </div>
+      )}
+      {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
+    </section>
+  );
+}
+
+function BusinessRequestPanel({ t }: { t: GiftCopy }) {
+  const [submitted, setSubmitted] = useState(false);
+
+  return (
+    <section id="business-request" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-md bg-slate-100 px-3 py-2 text-xs font-black text-slate-700"><Factory className="h-4 w-4 text-[#0b4f9c]" />Business Print Workflow</div>
+          <h2 className="mt-4 text-2xl font-black text-slate-950">{t.businessRequestTitle}</h2>
+          <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-500">{t.businessRequestDescription}</p>
+        </div>
+        <div className="max-w-xs rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs font-bold leading-5 text-cyan-900"><div className="flex items-center gap-2"><PackageCheck className="h-4 w-4" />{t.businessTitle}</div><p className="mt-1">{t.businessDescription}</p></div>
+      </div>
+      {submitted ? (
+        <div className="mt-7 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-emerald-900"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" /><div><h3 className="text-sm font-black">{t.businessSubmitted}</h3><p className="mt-1 text-xs font-medium leading-5">{t.orderSuccessHint}</p></div></div>
+      ) : (
+        <form className="mt-7 grid gap-5 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setSubmitted(true); }}>
+          <label className="block text-sm font-black text-slate-700">{t.businessUseCase}<select required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option>{t.sceneCustomer}</option><option>{t.sceneEvent}</option><option>{t.businessTitle}</option></select></label>
+          <label className="block text-sm font-black text-slate-700">{t.businessSource}<select required className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"><option value="">{t.scenePlaceholder}</option><option>{t.libraryTitle}</option><option>{t.generateTitle}</option><option>{t.businessTitle}</option></select></label>
+          <label className="block text-sm font-black text-slate-700">{t.businessDeadline}<input type="date" className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+          <label className="block text-sm font-black text-slate-700 md:col-span-2">{t.note}<textarea required rows={4} placeholder={t.businessRequestPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+          <div className="md:col-span-2"><button type="submit" className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e]" data-umami-event="gift_business_request_submit_click"><Factory className="h-5 w-5" />{t.businessSubmit}</button></div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function GiftDashboard({ language, t, employeeName, onLogout }: { language: GiftLanguage; t: GiftCopy; employeeName: string; onLogout: () => void }) {
+  const [selectedModel, setSelectedModel] = useState<GiftModel | null>(null);
+  const [hasOrder, setHasOrder] = useState(false);
+  const [category, setCategory] = useState<'all' | GiftModel['category']>('all');
+  const [search, setSearch] = useState('');
+  const [showBusinessRequest, setShowBusinessRequest] = useState(false);
+  const models = modelCatalog[language];
+  const labels = studioCopy[language];
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const visibleModels = models.filter((model) => {
+    const matchesCategory = category === 'all' || model.category === category;
+    const matchesSearch = !normalizedSearch || `${model.name} ${model.description} ${model.useCase} ${model.categoryLabel}`.toLocaleLowerCase().includes(normalizedSearch);
+    return matchesCategory && matchesSearch;
+  });
+  const categories: { id: 'all' | GiftModel['category']; label: string }[] = [
+    { id: 'all', label: labels.all },
+    { id: 'business', label: labels.business },
+    { id: 'culture', label: labels.culture },
+    { id: 'technology', label: labels.technology },
+    { id: 'custom', label: labels.custom },
+  ];
+
+  return (
+    <>
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-5">
+          <div>
+            <div className="inline-flex items-center gap-2 text-xs font-black text-cyan-700"><BadgeCheck className="h-4 w-4" />{labels.eyebrow}</div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employeeName}</span><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{hasOrder ? `${labels.orders} 1` : labels.orders}</span></div>
+          </div>
+          <button type="button" onClick={onLogout} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-[#0b4f9c]" data-umami-event="gift_logout_click"><LogOut className="h-4 w-4" />{t.logout}</button>
+        </div>
+      </section>
+
+      <section id="gift-library" className="mx-auto max-w-[1480px] px-5 pb-8 pt-8 md:pt-10">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="flex flex-wrap items-end justify-between gap-6">
+            <div className="max-w-3xl">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">UnionAM Gift Library</div>
+              <h1 className="mt-3 text-3xl font-black leading-tight text-slate-950 md:text-4xl">{labels.welcome}</h1>
+              <p className="mt-3 text-sm font-medium leading-6 text-slate-500 md:text-base">{labels.welcomeDescription}</p>
+            </div>
+            <a href="#ai-generate" className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-cyan-200 bg-cyan-50 px-4 text-sm font-black text-[#0b4f9c] transition hover:border-cyan-400 hover:bg-cyan-100" data-umami-event="gift_ai_entry_click"><WandSparkles className="h-4 w-4" />{labels.aiTitle}<ChevronRight className="h-4 w-4" /></a>
+          </div>
+
+          <div className="mt-8 flex flex-col gap-4 border-t border-slate-100 pt-6 lg:flex-row lg:items-center lg:justify-between">
+            <div><h2 className="text-2xl font-black text-[#0b4f9c]">{labels.libraryTitle}</h2><p className="mt-1 text-sm font-medium text-slate-500">{labels.libraryDescription}</p></div>
+            <label className="relative block w-full lg:w-80"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={labels.searchPlaceholder} className="h-11 w-full rounded-md border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm font-medium outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-2 focus:ring-cyan-100" /></label>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">{categories.map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.id)} className={`rounded-full border px-4 py-2 text-xs font-black transition ${category === item.id ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-[#0b4f9c]'}`}>{item.label}</button>)}</div>
+
+          {visibleModels.length > 0 ? <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleModels.map((model) => <ModelCard key={model.id} model={model} t={t} labels={labels} onOrder={setSelectedModel} />)}</div> : <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-bold text-slate-500">{labels.noResult}</div>}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-[1480px] px-5 py-4"><AiGiftStudio language={language} onOrder={setSelectedModel} /></section>
+
+      <section className="mx-auto max-w-[1480px] px-5 py-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-slate-100 text-[#0b4f9c]"><Factory className="h-5 w-5" /></div><div><h2 className="text-sm font-black text-slate-900">{labels.newRequest}</h2><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{t.businessDescription}</p></div></div>
+          <button type="button" onClick={() => setShowBusinessRequest((current) => !current)} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-4 text-xs font-black text-slate-600 transition hover:border-cyan-300 hover:text-[#0b4f9c]" data-umami-event="gift_business_request_entry_click">{labels.newRequestButton}<ChevronRight className={`h-4 w-4 transition ${showBusinessRequest ? 'rotate-90' : ''}`} /></button>
+        </div>
+        {showBusinessRequest ? <div className="mt-4"><BusinessRequestPanel t={t} /></div> : null}
+      </section>
+
+      <footer className="mt-5 border-t border-slate-200 bg-white px-5 py-5"><div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500"><span>© UnionAM</span><span className="text-slate-300">|</span><span>{t.allLocal}</span><span className="text-slate-300">|</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪ICP备17023219号-18</a><span className="text-slate-300">|</span><a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪公网安备31011702891863号</a></div></footer>
+
+      {selectedModel ? <OrderModal model={selectedModel} t={t} onClose={() => setSelectedModel(null)} onSubmitted={() => setHasOrder(true)} /> : null}
+    </>
+  );
+}
+
+type GiftEmployee = {
+  userId: string;
+  name: string;
+  departments: number[];
+};
+
+function AuthenticationLoading({ t }: { t: GiftCopy }) {
+  return (
+    <section className="mx-auto grid min-h-[520px] max-w-[1480px] place-items-center px-5 py-10">
+      <div className="rounded-xl border border-slate-200 bg-white px-8 py-10 text-center shadow-sm">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-cyan-100 border-t-[#0b4f9c]" />
+        <p className="mt-5 text-sm font-black text-slate-700">{t.authLoading}</p>
+      </div>
+    </section>
+  );
+}
+
+export default function GiftPage() {
+  const { language, setLanguage, t: headerLabels } = useLanguage();
+  const giftLanguage = language as GiftLanguage;
+  const t = copy[giftLanguage];
+  const [authStatus, setAuthStatus] = useState<'loading' | 'guest' | 'authenticated'>('loading');
+  const [employee, setEmployee] = useState<GiftEmployee | null>(null);
+  const [loginPending, setLoginPending] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const navItems = [
+    { label: headerLabels.navQuote, href: '/quote' },
+    { label: headerLabels.navConverter, href: '/converter' },
+    { label: headerLabels.navGift, href: '/gift', active: true, eventName: 'header_gift_click' },
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+    const queryError = new URLSearchParams(window.location.search).get('auth_error');
+    if (queryError) setAuthError(queryError);
+
+    fetch('/api/gift/auth/session', { cache: 'no-store', credentials: 'same-origin' })
+      .then(async (response) => {
+        const payload = (await response.json()) as { authenticated?: boolean; user?: GiftEmployee };
+        if (cancelled) return;
+
+        if (response.ok && payload.authenticated && payload.user) {
+          setEmployee(payload.user);
+          setAuthStatus('authenticated');
+        } else {
+          setEmployee(null);
+          setAuthStatus('guest');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEmployee(null);
+        setAuthStatus('guest');
+        setAuthError('login_failed');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function startWeComLogin() {
+    setLoginPending(true);
+    setAuthError(null);
+    window.location.assign('/api/gift/auth/wecom/start');
+  }
+
+  async function startDevelopmentLogin() {
+    setLoginPending(true);
+    setAuthError(null);
+
+    try {
+      const loginResponse = await fetch('/api/gift/auth/dev-login', { method: 'POST', credentials: 'same-origin' });
+      if (!loginResponse.ok) throw new Error('Development login failed.');
+
+      const sessionResponse = await fetch('/api/gift/auth/session', { cache: 'no-store', credentials: 'same-origin' });
+      const payload = (await sessionResponse.json()) as { authenticated?: boolean; user?: GiftEmployee };
+      if (!sessionResponse.ok || !payload.authenticated || !payload.user) throw new Error('Development session was not created.');
+
+      setEmployee(payload.user);
+      setAuthStatus('authenticated');
+    } catch {
+      setEmployee(null);
+      setAuthStatus('guest');
+      setAuthError('login_failed');
+    } finally {
+      setLoginPending(false);
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/gift/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => undefined);
+    setEmployee(null);
+    setAuthStatus('guest');
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-100 text-slate-950">
+      <ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} />
+      {authStatus === 'loading' ? <AuthenticationLoading t={t} /> : null}
+      {authStatus === 'guest' ? (
+        <LoginGate
+          t={t}
+          onLogin={startWeComLogin}
+          onDevLogin={startDevelopmentLogin}
+          showDevLogin={process.env.NODE_ENV !== 'production'}
+          loginPending={loginPending}
+          errorCode={authError}
+        />
+      ) : null}
+      {authStatus === 'authenticated' && employee ? <GiftDashboard language={giftLanguage} t={t} employeeName={employee.name} onLogout={logout} /> : null}
+    </main>
+  );
+}
