@@ -52,6 +52,14 @@ export function getWeComConfiguration() {
   };
 }
 
+export function giftPublicUrl(path: string) {
+  const configuredOrigin = process.env.UNIONAM_PUBLIC_ORIGIN?.trim();
+  const fallbackOrigin = process.env.NODE_ENV === 'production' ? 'https://unionam.com' : 'http://localhost:3000';
+  const url = new URL(path, configuredOrigin || fallbackOrigin);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new WeComAuthError('UNIONAM_PUBLIC_ORIGIN is invalid.', 'configuration');
+  return url;
+}
+
 async function requestWeCom<T extends WeComApiResponse>(url: URL) {
   const response = await fetch(url, {
     cache: 'no-store',

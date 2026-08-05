@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { WECOM_STATE_COOKIE, weComStateCookieOptions } from '@/lib/gift-auth';
-import { buildWeComQrLoginUrl, WeComAuthError } from '@/lib/wecom';
+import { buildWeComQrLoginUrl, giftPublicUrl, WeComAuthError } from '@/lib/wecom';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +14,6 @@ export function GET(request: NextRequest) {
     return response;
   } catch (error) {
     const reason = error instanceof WeComAuthError && error.reason === 'configuration' ? 'configuration' : 'login_failed';
-    return NextResponse.redirect(new URL(`/gift?auth_error=${reason}`, request.url));
+    return NextResponse.redirect(giftPublicUrl(`/gift?auth_error=${reason}`));
   }
 }
