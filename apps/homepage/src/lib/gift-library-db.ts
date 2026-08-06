@@ -123,12 +123,48 @@ function normalizeRequest(row: RowDataPacket) {
     completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
+    thumbnailAssetId: row.thumbnail_asset_id ? Number(row.thumbnail_asset_id) : null,
+    thumbnailContentType: row.thumbnail_content_type ? String(row.thumbnail_content_type) : null,
+    modelAssetId: row.model_asset_id ? Number(row.model_asset_id) : null,
+    modelExtension: row.model_extension ? String(row.model_extension) : null,
   };
 }
 
 const requestSelect = `
   SELECT r.*, requester.display_name AS requester_name, assignee.display_name AS assignee_name,
-    m.title_zh AS model_title
+    m.title_zh AS model_title,
+    (
+      SELECT ra.asset_id
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.content_type LIKE 'image/%'
+      ORDER BY (a.asset_kind = 'model_preview') DESC, (a.asset_kind = 'render_image') DESC, ra.created_at DESC
+      LIMIT 1
+    ) AS thumbnail_asset_id,
+    (
+      SELECT a.content_type
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.content_type LIKE 'image/%'
+      ORDER BY (a.asset_kind = 'model_preview') DESC, (a.asset_kind = 'render_image') DESC, ra.created_at DESC
+      LIMIT 1
+    ) AS thumbnail_content_type,
+    (
+      SELECT ra.asset_id
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.asset_kind = 'model_file'
+      ORDER BY ra.created_at DESC
+      LIMIT 1
+    ) AS model_asset_id,
+    (
+      SELECT a.file_extension
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.asset_kind = 'model_file'
+      ORDER BY ra.created_at DESC
+      LIMIT 1
+    ) AS model_extension
   FROM gift_print_requests r
   INNER JOIN gift_employees requester ON requester.id = r.requester_employee_id
   LEFT JOIN gift_employees assignee ON assignee.id = r.assigned_to_employee_id
@@ -300,7 +336,7 @@ export async function createGiftPrintRequest(session: GiftSession, input: Record
 
 export async function listMyGiftPrintRequests(session: GiftSession) {
   const employee = await requireGiftEmployeeAccess(session);
-  const [rows] = await databasePool().execute<RowDataPacket[]>(`${requestSelect} WHERE r.requester_employee_id = ? ORDER BY r.created_at DESC LIMIT 200`, [employee.id]);
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`${requestSelect} WHERE r.requester_employee_id = ? AND NOT EXISTS (SELECT 1 FROM gift_request_events deleted_event WHERE deleted_event.request_id = r.id AND deleted_event.event_type = 'deleted') ORDER BY r.created_at DESC LIMIT 200`, [employee.id]);
   return rows.map(normalizeRequest);
 }
 
@@ -319,7 +355,7 @@ export async function getGiftPrintRequestDetail(employee: GiftEmployeeAccess, re
     `, parameters),
     databasePool().execute<RowDataPacket[]>(`
       SELECT ra.id, ra.asset_id, ra.attachment_role, ra.visible_to_requester, ra.created_at,
-        a.original_filename, a.content_type, a.file_extension, a.size_bytes,
+        a.asset_kind, a.original_filename, a.content_type, a.file_extension, a.size_bytes,
         uploader.display_name AS uploader_name
       FROM gift_request_attachments ra
       INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
@@ -339,7 +375,7 @@ export async function getGiftPrintRequestDetail(employee: GiftEmployeeAccess, re
       createdAt: new Date(row.created_at).toISOString(),
     })),
     attachments: attachmentRows.map((row) => ({
-      id: Number(row.id), assetId: Number(row.asset_id), role: String(row.attachment_role), filename: String(row.original_filename || '附件'),
+      id: Number(row.id), assetId: Number(row.asset_id), role: String(row.attachment_role), assetKind: String(row.asset_kind), filename: String(row.original_filename || '附件'),
       contentType: row.content_type ? String(row.content_type) : null, extension: row.file_extension ? String(row.file_extension) : null,
       size: row.size_bytes === null ? null : Number(row.size_bytes), visibleToRequester: Boolean(row.visible_to_requester),
       uploaderName: row.uploader_name ? String(row.uploader_name) : null, createdAt: new Date(row.created_at).toISOString(),

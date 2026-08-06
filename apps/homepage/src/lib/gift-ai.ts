@@ -42,6 +42,7 @@ export type WhiteModelJob = {
 export type WhiteModelQuery = {
   id: string;
   status: 'queued' | 'in_progress' | 'completed' | 'failed';
+  progress: number;
   models: { type: string; url: string; previewImageUrl?: string }[];
 };
 
@@ -308,9 +309,13 @@ export async function queryWhiteModel(id: string): Promise<WhiteModelQuery> {
   const taskId = reference.stage === 'conversion' ? reference.conversionTaskId! : reference.generationTaskId;
   const task = await queryTripoTask(taskId);
   const status = normalizeTripoStatus(task.status);
+  const reportedProgress = Number(task.progress);
+  const progress = status === 'completed'
+    ? 100
+    : Number.isFinite(reportedProgress) ? Math.min(99, Math.max(0, Math.round(reportedProgress))) : 0;
 
-  if (status === 'failed') return { id, status, models: [] };
-  if (status !== 'completed') return { id, status, models: [] };
+  if (status === 'failed') return { id, status, progress, models: [] };
+  if (status !== 'completed') return { id, status, progress, models: [] };
 
   if (reference.stage === 'generation') {
     if (typeof task.credits_consumed === 'number' && task.credits_consumed > TRIPO_3D_MAX_CREDITS) {
@@ -329,6 +334,7 @@ export async function queryWhiteModel(id: string): Promise<WhiteModelQuery> {
     return {
       id,
       status: 'completed',
+      progress: 100,
       models: [
         { type: 'stl', url: task.output.model_url, previewImageUrl: task.output.rendered_image_url },
         { type: 'glb', url: task.output.model_url, previewImageUrl: task.output.rendered_image_url },
@@ -341,6 +347,7 @@ export async function queryWhiteModel(id: string): Promise<WhiteModelQuery> {
   return {
     id,
     status: 'completed',
+    progress: 100,
     models: [{
       type: 'stl',
       url: task.output.model_url,

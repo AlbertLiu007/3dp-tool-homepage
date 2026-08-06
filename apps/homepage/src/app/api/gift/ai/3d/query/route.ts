@@ -43,13 +43,13 @@ export async function GET(request: Request) {
       const storedPreview = await findGiftDraftGeneratedAsset(employee, draftRequestId, activeId, 'model_preview');
       return NextResponse.json({
         draft: { id: draftRequestId },
-        job: { id: activeId, status: 'completed', models: [{ type: storedModel.extension, url: storedModel.url, assetId: storedModel.assetId, previewImageUrl: storedPreview?.url, previewAssetId: storedPreview?.assetId }] },
+        job: { id: activeId, status: 'completed', progress: 100, models: [{ type: storedModel.extension, url: storedModel.url, assetId: storedModel.assetId, previewImageUrl: storedPreview?.url, previewAssetId: storedPreview?.assetId }] },
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
     let job = await queryWhiteModel(activeId);
     if (job.id !== activeId) {
       const storedId = await replaceGiftAiProviderJob(usage.requestId, activeId, job.id);
-      if (storedId !== job.id) job = { id: storedId, status: 'in_progress', models: [] };
+      if (storedId !== job.id) job = { id: storedId, status: 'in_progress', progress: 0, models: [] };
       activeId = storedId;
     }
     if (job.status === 'completed') {

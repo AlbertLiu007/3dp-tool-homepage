@@ -1,19 +1,21 @@
 'use client';
 
-import { Download, LoaderCircle, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Download, LoaderCircle, Save, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type * as THREE from 'three';
 import { GiftModelViewer } from './gift-model-viewer';
 import { disposeObjectResources } from '@/lib/model/model-scene';
 import { measureGiftModel } from '@/lib/model/model-measure';
 import { parseGiftModelBuffer } from '@/lib/model/parse-model';
+import { createScaledStlBlob } from '@/lib/model/export-scaled-stl';
 import type { GiftModelMeasurement } from '@/lib/model/model-types';
 
 export type GeneratedGiftModel = {
   jobId: string;
   modelUrl: string;
   modelType: 'stl' | 'glb' | 'gltf';
+  fileName?: string;
   previewImageUrl?: string;
   draftRequestId?: number;
   modelAssetId?: number;
@@ -24,11 +26,13 @@ const modalCopy = {
   zh: {
     title: '白膜 3D 模型预览', downloading: '正在加载模型', parsing: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。',
     close: '关闭', download: '下载 STL 模型', fileName: '文件名', fileSize: '文件大小', dimensions: '长 × 宽 × 高', volume: '体积', surfaceArea: '表面积', triangles: '三角面片',
+    scale: '等比缩放', saveScale: '保存缩放', savingScale: '保存中…', scaleFailed: '缩放保存失败，请重试。', saveBeforeDownload: '请先保存当前缩放比例', scaleInvalid: '请输入 10–99999 的整数',
     lightFixed: '固定侧光', lightFollow: '跟随视角光', lightFixedShort: '固定光', lightFollowShort: '跟随光', showGrid: '显示网格', hideGrid: '隐藏网格', gridOn: '网格开', gridOff: '网格关', rotatePan: '旋转/平移', rotate: '旋转', pan: '平移', resetView: '重置视角',
   },
   en: {
     title: 'White 3D model preview', downloading: 'Loading model', parsing: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.',
     close: 'Close', download: 'Download STL model', fileName: 'File Name', fileSize: 'File Size', dimensions: 'L × W × H', volume: 'Volume', surfaceArea: 'Surface Area', triangles: 'Triangles',
+    scale: 'Uniform scale', saveScale: 'Save scale', savingScale: 'Saving…', scaleFailed: 'Unable to save the scaled STL. Please retry.', saveBeforeDownload: 'Save the current scale before downloading', scaleInvalid: 'Enter an integer from 10 to 99999',
     lightFixed: 'Fixed side light', lightFollow: 'Camera-following light', lightFixedShort: 'Fixed', lightFollowShort: 'Follow', showGrid: 'Show Grid', hideGrid: 'Hide Grid', gridOn: 'Grid On', gridOff: 'Grid Off', rotatePan: 'Rotate/Pan', rotate: 'Rotate', pan: 'Pan', resetView: 'Reset View',
   },
 };
@@ -105,6 +109,42 @@ async function readResponseBuffer(response: Response, onProgress: (progress: Dow
   return result.buffer;
 }
 
+// Keep one in-flight/completed buffer per exact model URL so the library card,
+// request thumbnail, and AI result preview can share the same model download.
+const modelBufferCache = new Map<string, Promise<ArrayBuffer>>();
+
+function modelContentType(modelType: GeneratedGiftModel['modelType']) {
+  if (modelType === 'glb') return 'model/gltf-binary';
+  if (modelType === 'gltf') return 'model/gltf+json';
+  return 'model/stl';
+}
+
+function loadModelBuffer(modelUrl: string, signal: AbortSignal, onProgress: (progress: DownloadProgress) => void) {
+  const isStaticModel = modelUrl.startsWith('/gift-models/');
+  const cachedBuffer = modelBufferCache.get(modelUrl);
+  if (cachedBuffer) {
+    return cachedBuffer.then((buffer) => {
+      onProgress({ loaded: buffer.byteLength, total: buffer.byteLength });
+      return buffer;
+    });
+  }
+
+  const request = fetch(modelUrl, {
+    credentials: 'same-origin',
+    cache: isStaticModel ? 'force-cache' : 'no-store',
+    signal,
+  }).then(async (response) => {
+    if (!response.ok) throw new Error('Unable to load model.');
+    return readResponseBuffer(response, onProgress);
+  });
+
+  modelBufferCache.set(modelUrl, request);
+  request.catch(() => {
+    if (modelBufferCache.get(modelUrl) === request) modelBufferCache.delete(modelUrl);
+  });
+  return request;
+}
+
 export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 'en'; model: GeneratedGiftModel; onClose: () => void }) {
   const labels = modalCopy[language];
   const [mounted, setMounted] = useState(false);
@@ -114,6 +154,17 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [loadPhase, setLoadPhase] = useState<'downloading' | 'parsing'>('downloading');
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({ loaded: 0, total: null });
+  const [sourceBuffer, setSourceBuffer] = useState<ArrayBuffer | null>(null);
+  const [scalePercent, setScalePercent] = useState(100);
+  const [scaleInput, setScaleInput] = useState('100');
+  const [scaleInputError, setScaleInputError] = useState(false);
+  const [savedScalePercent, setSavedScalePercent] = useState(100);
+  const [scaledDownloadUrl, setScaledDownloadUrl] = useState<string | null>(null);
+  const [scaleSaving, setScaleSaving] = useState(false);
+  const [scaleError, setScaleError] = useState(false);
+  const [sourceDownloadUrl, setSourceDownloadUrl] = useState<string | null>(null);
+  const sourceDownloadUrlRef = useRef<string | null>(null);
+  const scaledDownloadUrlRef = useRef<string | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -137,11 +188,25 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     setFileSize(null);
     setMeasurement(null);
     setObject(null);
-    void fetch(model.modelUrl, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Unable to load model.');
-        const buffer = await readResponseBuffer(response, setDownloadProgress);
+    setSourceBuffer(null);
+    if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
+    sourceDownloadUrlRef.current = null;
+    setSourceDownloadUrl(null);
+    setScalePercent(100);
+    setScaleInput('100');
+    setScaleInputError(false);
+    setSavedScalePercent(100);
+    setScaleError(false);
+    if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
+    scaledDownloadUrlRef.current = null;
+    setScaledDownloadUrl(null);
+    void loadModelBuffer(model.modelUrl, controller.signal, setDownloadProgress)
+      .then(async (buffer) => {
         setFileSize(buffer.byteLength);
+        setSourceBuffer(buffer);
+        const nextSourceDownloadUrl = URL.createObjectURL(new Blob([buffer], { type: modelContentType(model.modelType) }));
+        sourceDownloadUrlRef.current = nextSourceDownloadUrl;
+        setSourceDownloadUrl(nextSourceDownloadUrl);
         setLoadPhase('parsing');
         const parsed = await parseGiftModelBuffer(buffer, model.modelType);
         parsedObject = parsed.object;
@@ -155,9 +220,55 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
       });
     return () => {
       controller.abort();
+      if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
+      sourceDownloadUrlRef.current = null;
       if (parsedObject) disposeObjectResources(parsedObject);
     };
   }, [model]);
+
+  useEffect(() => () => {
+    if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
+    if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
+  }, []);
+
+  function isValidScaleInput(value: string) {
+    if (!/^\d+$/.test(value)) return false;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 10 && parsed <= 99999;
+  }
+
+  function commitScaleInput(value = scaleInput) {
+    if (!isValidScaleInput(value)) {
+      setScaleInputError(true);
+      return;
+    }
+    const parsed = Number(value);
+    setScalePercent(parsed);
+    setScaleInput(String(parsed));
+    setScaleInputError(false);
+  }
+
+  async function saveScale() {
+    if (!sourceBuffer || !object || status !== 'ready' || scaleSaving) return;
+    setScaleSaving(true);
+    setScaleError(false);
+    try {
+      await new Promise((resolve) => window.setTimeout(resolve, 30));
+      let nextUrl: string | null = null;
+      if (scalePercent !== 100) {
+        const blob = createScaledStlBlob({ buffer: sourceBuffer, object, format: model.modelType, scale: scalePercent / 100 });
+        nextUrl = URL.createObjectURL(blob);
+      }
+      if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
+      scaledDownloadUrlRef.current = nextUrl;
+      setScaledDownloadUrl(nextUrl);
+      setSavedScalePercent(scalePercent);
+    } catch {
+      setScaleError(true);
+    } finally {
+      setScaleSaving(false);
+    }
+  }
 
   if (!mounted) return null;
 
@@ -166,20 +277,56 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     : null;
   const loadingLabel = loadPhase === 'downloading' ? labels.downloading : labels.parsing;
   const displayedFileSize = fileSize ?? downloadProgress.total;
+  const scale = scalePercent / 100;
+  const scaledMeasurement = measurement ? {
+    dimensionsMm: {
+      x: measurement.dimensionsMm.x * scale,
+      y: measurement.dimensionsMm.y * scale,
+      z: measurement.dimensionsMm.z * scale,
+    },
+    volumeCm3: measurement.volumeCm3 === null ? null : measurement.volumeCm3 * scale ** 3,
+    surfaceAreaMm2: measurement.surfaceAreaMm2 === null ? null : measurement.surfaceAreaMm2 * scale ** 2,
+    triangleCount: measurement.triangleCount,
+  } : null;
+  const scalePending = scalePercent !== savedScalePercent;
+  const downloadUrl = scaledDownloadUrl || sourceDownloadUrl || model.modelUrl;
+  const downloadReady = status === 'ready' && Boolean(downloadUrl);
+  const stlFileName = (model.fileName || 'unionam-gift.stl').replace(/\.[^.]+$/, '.stl');
+  const downloadName = scalePercent === 100 ? stlFileName : stlFileName.replace(/\.stl$/i, `-${scalePercent}pct.stl`);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-950/55 px-2 pb-2 pt-[6.5rem] backdrop-blur-sm sm:px-3 sm:pb-3 md:px-6 md:pb-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={labels.title} className="flex h-[calc(100dvh-7rem)] max-h-[900px] w-full max-w-[1180px] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-        <div className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-5"><div><h2 className="text-base font-black text-slate-950">{labels.title}</h2><p className="text-[11px] font-bold text-slate-400">{model.modelType.toUpperCase()} · UnionAM</p></div><button type="button" onClick={onClose} title={labels.close} className="grid h-9 w-9 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-5 w-5" /></button></div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain rounded-b-xl border-slate-200 bg-white">
-          <div className="relative min-h-[280px] flex-1 shrink border-b border-slate-200 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)] sm:min-h-[320px]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/55 p-3 backdrop-blur-sm md:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={labels.title} className="flex aspect-square w-[min(94vw,88dvh,960px)] min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="relative z-10 flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <strong className="truncate text-sm font-black text-slate-950">{stlFileName}</strong>
+            <span className="shrink-0 text-[11px] font-bold text-slate-400">{labels.fileSize}：{formatFileSize(displayedFileSize)}</span>
+          </div>
+          <a href={downloadReady && !scalePending ? downloadUrl : undefined} onClick={(event) => { if (!downloadReady || scalePending) event.preventDefault(); }} download={downloadName} title={scalePending ? labels.saveBeforeDownload : labels.download} aria-disabled={!downloadReady || scalePending} className={`ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-black text-white transition ${!downloadReady || scalePending ? 'cursor-not-allowed bg-slate-300' : 'bg-[#0b4f9c] hover:bg-[#083f7e]'}`}><Download className="h-3.5 w-3.5" />{labels.download}</a>
+          <button type="button" onClick={onClose} title={labels.close} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col rounded-b-xl bg-white">
+          <div className="relative min-h-0 flex-1 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)]">
             {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : null}
             {status !== 'ready' ? <div className="absolute inset-0 grid place-items-center p-4"><div className={`w-full max-w-sm rounded-lg border bg-white/95 px-5 py-4 text-sm font-bold shadow-sm ${status === 'failed' ? 'border-red-200 text-red-700' : 'border-slate-200 text-slate-700'}`}>{status === 'loading' ? <><div className="flex items-center gap-2"><LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-cyan-700" /><span>{loadingLabel}{loadPhase === 'downloading' && downloadPercent !== null ? ` ${downloadPercent}%` : ''}</span></div>{loadPhase === 'downloading' ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-cyan-600 transition-[width] duration-150" style={{ width: `${downloadPercent ?? 0}%` }} /></div><div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500"><span>{downloadPercent !== null ? `${downloadPercent}%` : '--%'}</span><span>{formatFileSize(downloadProgress.loaded)} / {formatFileSize(downloadProgress.total)}</span></div></> : <div className="mt-2 text-xs text-slate-500">{formatFileSize(fileSize)}</div>}</> : labels.failed}</div></div> : null}
             <div className="absolute left-4 top-4 rounded-md border border-white/70 bg-white/90 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">{status === 'loading' ? loadingLabel : status === 'ready' ? labels.ready : labels.failed}</div>
           </div>
-          <div className="shrink-0 border-b border-slate-100 px-4 py-3"><div className="flex flex-wrap items-end justify-between gap-3"><div className="min-w-0 flex-1"><div className="text-xs font-bold text-slate-500">{labels.fileName}</div><div className="mt-1 truncate text-sm font-black text-slate-950">unionam-gift.{model.modelType}</div></div><div className="shrink-0 text-right"><div className="text-xs font-bold text-slate-500">{labels.fileSize}</div><div className="mt-1 text-sm font-black text-slate-950">{formatFileSize(displayedFileSize)}</div></div></div></div>
-          <div className="grid shrink-0 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_1fr] xl:p-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-bold text-slate-500">{labels.dimensions}</div><div className="mt-1.5 text-base font-black xl:text-lg">{measurement ? `${formatNumber(measurement.dimensionsMm.x, language)} × ${formatNumber(measurement.dimensionsMm.y, language)} × ${formatNumber(measurement.dimensionsMm.z, language)} mm` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-bold text-slate-500">{labels.volume}</div><div className="mt-1.5 text-base font-black xl:text-lg">{measurement?.volumeCm3 ? `${formatNumber(measurement.volumeCm3, language, 2)} cm³` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-bold text-slate-500">{labels.surfaceArea}</div><div className="mt-1.5 text-base font-black xl:text-lg">{measurement?.surfaceAreaMm2 ? `${formatNumber(measurement.surfaceAreaMm2, language, 0)} mm²` : '--'}</div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-bold text-slate-500">{labels.triangles}</div><div className="mt-1.5 text-base font-black xl:text-lg">{measurement ? measurement.triangleCount.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '--'}</div></div></div>
-          <div className="flex shrink-0 justify-end border-t border-slate-100 p-3 md:p-4"><a href={model.modelUrl} download={`unionam-gift.${model.modelType}`} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b4f9c] px-4 text-sm font-black text-white transition hover:bg-[#083f7e]"><Download className="h-4 w-4" />{labels.download}</a></div>
+          <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 text-[11px] text-slate-600">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="min-w-0 font-bold"><span className="text-slate-400">{labels.dimensions}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement ? `${formatNumber(scaledMeasurement.dimensionsMm.x, language)} × ${formatNumber(scaledMeasurement.dimensionsMm.y, language)} × ${formatNumber(scaledMeasurement.dimensionsMm.z, language)} mm` : '--'}</strong></div>
+              <div className="flex shrink-0 items-center gap-2">
+                <label className={`inline-flex h-8 shrink-0 items-center rounded-md border bg-slate-50 pl-2 font-bold ${scaleInputError ? 'border-red-300 text-red-600' : 'border-slate-200 text-slate-500'}`}><span className="mr-2 whitespace-nowrap">{labels.scale}</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={scaleInput} disabled={status !== 'ready' || scaleSaving} onFocus={(event) => event.currentTarget.select()} onBlur={() => commitScaleInput()} onKeyDown={(event) => { if (event.key === 'Enter') commitScaleInput(); }} onChange={(event) => { const nextValue = event.target.value.replace(/\D/g, ''); setScaleInput(nextValue); setScaleInputError(false); if (isValidScaleInput(nextValue)) setScalePercent(Number(nextValue)); }} aria-invalid={scaleInputError} aria-label={`${labels.scale} %`} className="h-full w-20 border-l border-slate-200 bg-white px-1.5 text-right font-mono text-xs font-black text-slate-900 outline-none focus:bg-cyan-50" /><span className="px-2">%</span></label>
+                <button type="button" disabled={!sourceBuffer || !object || status !== 'ready' || scaleSaving || !scalePending || !isValidScaleInput(scaleInput)} onClick={() => void saveScale()} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[#0b4f9c] px-2.5 font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-40">{scaleSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}{scaleSaving ? labels.savingScale : labels.saveScale}</button>
+              </div>
+            </div>
+            {scaleInputError ? <div className="mt-1 text-right text-[10px] font-bold text-red-600">{labels.scaleInvalid}</div> : null}
+            <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-100 pt-2">
+              <div className="min-w-0"><span className="text-slate-400">{labels.volume}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement?.volumeCm3 !== null && scaledMeasurement?.volumeCm3 !== undefined ? `${formatNumber(scaledMeasurement.volumeCm3, language, 2)} cm³` : '--'}</strong></div>
+              <div className="min-w-0 text-center"><span className="text-slate-400">{labels.surfaceArea}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement?.surfaceAreaMm2 !== null && scaledMeasurement?.surfaceAreaMm2 !== undefined ? `${formatNumber(scaledMeasurement.surfaceAreaMm2, language, 0)} mm²` : '--'}</strong></div>
+              <div className="min-w-0 text-right"><span className="text-slate-400">{labels.triangles}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement ? scaledMeasurement.triangleCount.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '--'}</strong></div>
+            </div>
+            {scaleError ? <div className="mt-1 text-[10px] font-bold text-red-600">{labels.scaleFailed}</div> : null}
+          </div>
         </div>
       </div>
     </div>,

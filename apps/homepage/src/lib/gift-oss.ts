@@ -60,7 +60,7 @@ async function getEcsRoleCredential() {
   return result;
 }
 
-async function ossClient() {
+async function ossClient(options: { internal?: boolean } = {}) {
   const credential = await getEcsRoleCredential();
   return new OSS({
     region: process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai',
@@ -68,7 +68,7 @@ async function ossClient() {
     accessKeyId: credential.AccessKeyId!,
     accessKeySecret: credential.AccessKeySecret!,
     stsToken: credential.SecurityToken!,
-    internal: process.env.GIFT_OSS_INTERNAL !== 'false',
+    internal: options.internal ?? process.env.GIFT_OSS_INTERNAL !== 'false',
     secure: true,
     timeout: 120_000,
   });
@@ -510,6 +510,62 @@ export async function uploadGiftRequestAttachment(actor: GiftEmployeeAccess, req
   return uploaded!;
 }
 
+export async function deleteGiftDraft(actor: GiftEmployeeAccess, requestId: number, ip?: string) {
+  if (!Number.isInteger(requestId) || requestId <= 0) throw new GiftAccessError('Request ID is invalid.', 400, 'validation');
+  const connection = await databasePool().getConnection();
+  let requestNo = '';
+  let title = '';
+  let assets: { id: number; object_key: string }[] = [];
+  try {
+    const [requestRows] = await connection.execute<RowDataPacket[]>(`
+      SELECT id, request_no, title, request_status FROM gift_print_requests
+      WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' LIMIT 1
+    `, [requestId, actor.id]);
+    const request = requestRows[0];
+    if (!request) throw new GiftAccessError('Print request was not found.', 404, 'not_found');
+    if (String(request.request_status) !== 'draft') throw new GiftAccessError('Only an AI design draft can be deleted.', 409, 'validation');
+    requestNo = String(request.request_no);
+    title = String(request.title);
+    const [assetRows] = await connection.execute<RowDataPacket[]>(`
+      SELECT a.id, a.object_key
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = ?
+    `, [requestId]);
+    assets = assetRows.map((row) => ({ id: Number(row.id), object_key: String(row.object_key) }));
+  } finally {
+    connection.release();
+  }
+
+  const client = await ossClient();
+  for (const asset of assets) await client.delete(asset.object_key);
+
+  const updateConnection = await databasePool().getConnection();
+  try {
+    await updateConnection.beginTransaction();
+    const [lockedRows] = await updateConnection.execute<RowDataPacket[]>(`
+      SELECT request_status FROM gift_print_requests
+      WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' FOR UPDATE
+    `, [requestId, actor.id]);
+    if (!lockedRows[0] || String(lockedRows[0].request_status) !== 'draft') {
+      throw new GiftAccessError('The draft changed before deletion. Refresh and try again.', 409, 'validation');
+    }
+    await updateConnection.execute<ResultSetHeader>('UPDATE gift_assets a INNER JOIN gift_request_attachments ra ON ra.asset_id = a.id SET a.asset_status = \'deleted\', a.deleted_at = CURRENT_TIMESTAMP(3) WHERE ra.request_id = ? AND a.asset_status = \'active\'', [requestId]);
+    await updateConnection.execute<ResultSetHeader>('UPDATE gift_print_requests SET request_status = \'cancelled\', updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?', [requestId]);
+    await updateConnection.execute<ResultSetHeader>(`
+      INSERT INTO gift_request_events (request_id, actor_employee_id, event_type, from_status, to_status, comment_text)
+      VALUES (?, ?, 'deleted', 'draft', 'cancelled', '员工删除 AI 礼品设计草稿')
+    `, [requestId, actor.id]);
+    await updateConnection.commit();
+  } catch (error) {
+    await updateConnection.rollback();
+    throw error;
+  } finally {
+    updateConnection.release();
+  }
+  await recordGiftOpsAudit({ actorId: actor.id, action: 'gift_draft_deleted', entityType: 'print_request', entityId: requestId, summary: `${actor.name} 删除了 AI 礼品草稿 ${requestNo}`, payload: { title, assetIds: assets.map((asset) => asset.id) }, requestIp: ip }).catch(() => undefined);
+}
+
 export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId: number, assetId: number, ip?: string) {
   const connection = await databasePool().getConnection();
   let objectKey = '';
@@ -554,7 +610,9 @@ export async function getGiftAssetUrl(assetId: number, disposition: 'inline' | '
   const asset = rows[0];
   if (!asset) throw new GiftAccessError('Asset was not found.', 404, 'not_found');
   if (String(asset.bucket_name) !== required('GIFT_OSS_BUCKET')) throw new GiftAccessError('Asset bucket is not configured for this service.', 409, 'configuration');
-  const client = await ossClient();
+  // Browser requests arrive from outside the ECS VPC. Sign public OSS URLs for
+  // display/download; uploads and server-side reads continue using the internal endpoint.
+  const client = await ossClient({ internal: false });
   return client.signatureUrl(String(asset.object_key), { expires: 300, response: { 'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(String(asset.original_filename || 'unionam-asset'))}` } });
 }
 
