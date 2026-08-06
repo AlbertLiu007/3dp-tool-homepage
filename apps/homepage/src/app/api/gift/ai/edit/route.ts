@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { editGiftImage, GiftAiError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
-import { requireGiftEmployeeAccess } from '@/lib/gift-db';
+import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, persistGiftDraftFileAsset, persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
 
@@ -18,6 +18,22 @@ export async function POST(request: Request) {
     const promptValue = formData.get('prompt');
     const prompt = typeof promptValue === 'string' ? promptValue.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Edit prompt must contain 1 to 4000 characters.', 400, 'validation');
+    if (isLocalGiftDevelopmentSession(session)) {
+      const draftRequestId = Number(formData.get('draftRequestId'));
+      const generated = await withGiftAiUsage(
+        session,
+        'image_edit',
+        () => editGiftImage({ image, mask, prompt }),
+        giftAiIdempotencyKey(request),
+        { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' },
+      );
+      return NextResponse.json({
+        draft: { id: Number.isInteger(draftRequestId) && draftRequestId > 0 ? draftRequestId : 1 },
+        image: { ...generated, assetId: 1 },
+        sourceAssetId: 1,
+        maskAssetId: mask ? 2 : null,
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const employee = await requireGiftEmployeeAccess(session, { approved: true });
     const draft = await ensureGiftAiDraft(session, {
       draftRequestId: formData.get('draftRequestId'),

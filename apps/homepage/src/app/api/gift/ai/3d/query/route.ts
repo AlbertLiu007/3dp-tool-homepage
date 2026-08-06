@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { queryWhiteModel, GiftAiError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, requireGiftEmployee } from '@/lib/gift-ai-route';
-import { getOwnedGiftAiJob, replaceGiftAiProviderJob, requireGiftEmployeeAccess, settleGiftAiUsage } from '@/lib/gift-db';
-import { findGiftDraftGeneratedAsset, persistGiftDraftRemoteAsset } from '@/lib/gift-oss';
+import { getOwnedGiftAiJob, isLocalGiftDevelopmentSession, replaceGiftAiProviderJob, requireGiftEmployeeAccess, settleGiftAiUsage } from '@/lib/gift-db';
+import { findGiftDraftGeneratedAsset, persistGiftDraftBufferAsset, persistGiftDraftRemoteAsset } from '@/lib/gift-oss';
+import { ensureServerStl, readServerStl } from '@/lib/model/server-glb-to-stl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,6 +17,24 @@ export async function GET(request: Request) {
     const draftRequestId = Number(searchParams.get('draftRequestId'));
     if (!id || id.length > 255) throw new GiftAiError('A valid model job ID is required.', 400, 'validation');
     if (!Number.isInteger(draftRequestId) || draftRequestId <= 0) throw new GiftAiError('A valid draft request ID is required.', 400, 'validation');
+    if (isLocalGiftDevelopmentSession(session)) {
+      const job = await queryWhiteModel(id);
+      if (job.status !== 'completed') return NextResponse.json({ draft: { id: draftRequestId }, job }, { headers: { 'Cache-Control': 'no-store' } });
+      const hasPreview = job.models.some((model) => Boolean(model.previewImageUrl));
+      return NextResponse.json({
+        draft: { id: draftRequestId },
+        job: {
+          ...job,
+          models: [{
+            type: 'stl',
+            url: `/api/gift/ai/3d/file?id=${encodeURIComponent(id)}&type=stl`,
+            assetId: 1,
+            previewImageUrl: hasPreview ? `/api/gift/ai/3d/file?id=${encodeURIComponent(id)}&type=preview` : undefined,
+            previewAssetId: hasPreview ? 2 : undefined,
+          }],
+        },
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const employee = await requireGiftEmployeeAccess(session, { approved: true });
     const usage = await getOwnedGiftAiJob(session, id);
     let activeId = usage.providerJobId;
@@ -38,16 +57,31 @@ export async function GET(request: Request) {
       if (!preferred?.url) throw new GiftAiError('The completed model does not contain a downloadable file.');
       const extension = preferred.type.toLowerCase();
       if (!['stl', 'glb', 'gltf'].includes(extension)) throw new GiftAiError('The completed model format is not supported.', 502, 'validation');
-      const modelAsset = await persistGiftDraftRemoteAsset({
-        actor: employee,
-        requestId: draftRequestId,
-        kind: 'model_file',
-        sourceUrl: preferred.url,
-        filename: `unionam-ai-gift.${extension}`,
-        contentType: extension === 'stl' ? 'model/stl' : extension === 'gltf' ? 'model/gltf+json' : 'model/gltf-binary',
-        providerJobId: activeId,
-        metadata: { source: 'ai', stage: 'image_to_3d', usageRequestId: usage.requestId },
-      });
+      const metadata = { source: 'ai', stage: 'image_to_3d', usageRequestId: usage.requestId, providerJobId: activeId };
+      const modelAsset = extension === 'stl' && activeId.startsWith('tripo:g:')
+        ? await (async () => {
+          const glbSource = job.models.find((model) => model.type.toLowerCase() === 'glb')?.url || preferred.url;
+          const artifact = await ensureServerStl(activeId, glbSource);
+          return persistGiftDraftBufferAsset({
+            actor: employee,
+            requestId: draftRequestId,
+            kind: 'model_file',
+            buffer: await readServerStl(artifact),
+            filename: 'unionam-ai-gift.stl',
+            contentType: 'model/stl',
+            metadata,
+          });
+        })()
+        : await persistGiftDraftRemoteAsset({
+          actor: employee,
+          requestId: draftRequestId,
+          kind: 'model_file',
+          sourceUrl: preferred.url,
+          filename: `unionam-ai-gift.${extension}`,
+          contentType: extension === 'stl' ? 'model/stl' : extension === 'gltf' ? 'model/gltf+json' : 'model/gltf-binary',
+          providerJobId: activeId,
+          metadata,
+        });
       const previewAsset = preferred.previewImageUrl ? await persistGiftDraftRemoteAsset({
         actor: employee,
         requestId: draftRequestId,

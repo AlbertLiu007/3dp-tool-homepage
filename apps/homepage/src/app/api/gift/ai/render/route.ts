@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateGiftImages, GiftAiError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
-import { requireGiftEmployeeAccess } from '@/lib/gift-db';
+import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
 
@@ -14,6 +14,20 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Prompt must contain 1 to 4000 characters.', 400, 'validation');
+    if (isLocalGiftDevelopmentSession(session)) {
+      const requestedDraftId = Number(body.draftRequestId);
+      const generated = await withGiftAiUsage(
+        session,
+        'render',
+        () => generateGiftImages(prompt, 3),
+        giftAiIdempotencyKey(request),
+        { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' },
+      );
+      return NextResponse.json({
+        draft: { id: Number.isInteger(requestedDraftId) && requestedDraftId > 0 ? requestedDraftId : 1 },
+        images: generated.map((image, index) => ({ ...image, assetId: index + 1 })),
+      }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     const employee = await requireGiftEmployeeAccess(session, { approved: true });
     const draft = await ensureGiftAiDraft(session, {
       draftRequestId: body.draftRequestId,

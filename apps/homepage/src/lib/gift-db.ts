@@ -100,6 +100,10 @@ export function isBootstrapGiftAdmin(userId: string) {
   return adminUserIds().has(userId);
 }
 
+export function isLocalGiftDevelopmentSession(session: Pick<GiftSession, 'userId'>) {
+  return process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee';
+}
+
 function parseStrings(value: unknown) {
   const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
   return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
@@ -188,7 +192,7 @@ export async function registerVerifiedGiftEmployee(employee: VerifiedWeComEmploy
 }
 
 export async function getGiftEmployeeAccess(session: GiftSession) {
-  if (process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee') {
+  if (isLocalGiftDevelopmentSession(session)) {
     return {
       id: 0,
       userId: session.userId,
@@ -372,7 +376,7 @@ function limitForType(row: RowDataPacket, usageType: GiftAiUsageType) {
 export async function reserveGiftAiUsage(session: GiftSession, usageType: GiftAiUsageType, requestedId?: string, metadata?: { provider?: string; model?: string }) {
   const requestId = requestedId || randomUUID();
   if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new GiftAccessError('The idempotency key is invalid.', 400, 'quota');
-  if (process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee') return { requestId: `dev-${requestId}` };
+  if (isLocalGiftDevelopmentSession(session)) return { requestId: `dev-${requestId}` };
   const connection = await databasePool().getConnection();
   try {
     await connection.beginTransaction();
@@ -492,7 +496,7 @@ export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' 
 }
 
 export async function getOwnedGiftAiJob(session: GiftSession, providerJobId: string) {
-  if (process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee') return { requestId: 'dev-owned-job', status: 'running', providerJobId };
+  if (isLocalGiftDevelopmentSession(session)) return { requestId: 'dev-owned-job', status: 'running', providerJobId };
   let [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT u.request_uid, u.usage_status, u.provider_job_id
     FROM gift_ai_usage_events u
