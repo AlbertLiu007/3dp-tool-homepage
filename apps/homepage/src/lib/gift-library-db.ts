@@ -7,6 +7,16 @@ const requestTypes = new Set(['catalog_gift', 'ai_gift', 'business_sample']);
 const finishTypes = new Set(['white', 'paint', 'bronze', 'other']);
 const cancellableStatuses = new Set(['submitted', 'reviewing', 'approved', 'queued']);
 
+export type GiftAiDraftInput = {
+  draftRequestId?: unknown;
+  title?: unknown;
+  businessScene?: unknown;
+  finishType?: unknown;
+  paintColor?: unknown;
+  requestNotes?: unknown;
+  specifications?: unknown;
+};
+
 function parseJson<T>(value: unknown, fallback: T): T {
   if (value === null || value === undefined) return fallback;
   if (typeof value !== 'string') return value as T;
@@ -125,6 +135,123 @@ const requestSelect = `
   LEFT JOIN gift_models m ON m.id = r.model_id
 `;
 
+function giftRequestNumber() {
+  return `UG${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+function normalizedDraftFinish(input: GiftAiDraftInput) {
+  const finishType = typeof input.finishType === 'string' && finishTypes.has(input.finishType) ? input.finishType : 'white';
+  const paintColor = finishType === 'paint' && typeof input.paintColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(input.paintColor)
+    ? input.paintColor.toUpperCase()
+    : null;
+  return { finishType, paintColor };
+}
+
+export async function ensureGiftAiDraft(session: GiftSession, input: GiftAiDraftInput = {}) {
+  const employee = await requireGiftEmployeeAccess(session, { approved: true });
+  const requestedDraftId = input.draftRequestId === undefined || input.draftRequestId === null || input.draftRequestId === ''
+    ? null
+    : Number(input.draftRequestId);
+  if (requestedDraftId !== null && (!Number.isInteger(requestedDraftId) || requestedDraftId <= 0)) {
+    throw new GiftAccessError('Draft request ID is invalid.', 400, 'validation');
+  }
+  const title = text(input.title, 255) || 'AI 礼品设计草稿';
+  const businessScene = text(input.businessScene, 128);
+  const requestNotes = text(input.requestNotes, 5000);
+  const specifications = input.specifications && typeof input.specifications === 'object' ? JSON.stringify(input.specifications) : null;
+  const { finishType, paintColor } = normalizedDraftFinish(input);
+  const connection = await databasePool().getConnection();
+  try {
+    await connection.beginTransaction();
+    if (requestedDraftId !== null) {
+      const [rows] = await connection.execute<RowDataPacket[]>(`
+        SELECT id, request_no FROM gift_print_requests
+        WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' AND request_status = 'draft'
+        FOR UPDATE
+      `, [requestedDraftId, employee.id]);
+      if (!rows[0]) throw new GiftAccessError('AI gift draft was not found.', 404, 'not_found');
+      await connection.execute<ResultSetHeader>(`
+        UPDATE gift_print_requests
+        SET title = ?, business_scene = COALESCE(?, business_scene), finish_type = ?, paint_color = ?,
+          request_notes = COALESCE(?, request_notes), specifications = COALESCE(?, specifications),
+          updated_at = CURRENT_TIMESTAMP(3)
+        WHERE id = ?
+      `, [title, businessScene, finishType, paintColor, requestNotes, specifications, requestedDraftId]);
+      await connection.commit();
+      return { id: requestedDraftId, requestNo: String(rows[0].request_no) };
+    }
+
+    const requestNo = giftRequestNumber();
+    const [result] = await connection.execute<ResultSetHeader>(`
+      INSERT INTO gift_print_requests (
+        request_no, requester_employee_id, request_type, title, business_scene, quantity, finish_type,
+        paint_color, pickup_location, request_notes, specifications, priority, request_status
+      ) VALUES (?, ?, 'ai_gift', ?, ?, 1, ?, ?, '上海总部前台', ?, ?, 'normal', 'draft')
+    `, [requestNo, employee.id, title, businessScene, finishType, paintColor, requestNotes, specifications]);
+    await connection.execute<ResultSetHeader>(`
+      INSERT INTO gift_request_events (request_id, actor_employee_id, event_type, to_status, comment_text)
+      VALUES (?, ?, 'created', 'draft', '系统创建 AI 礼品设计草稿')
+    `, [result.insertId, employee.id]);
+    await connection.commit();
+    return { id: Number(result.insertId), requestNo };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function submitGiftAiDraft(session: GiftSession, draftRequestId: number, input: Record<string, unknown>) {
+  const employee = await requireGiftEmployeeAccess(session, { approved: true });
+  if (!Number.isInteger(draftRequestId) || draftRequestId <= 0) throw new GiftAccessError('Draft request ID is invalid.', 400, 'validation');
+  const finishType = typeof input.finishType === 'string' && finishTypes.has(input.finishType) ? input.finishType : 'white';
+  const paintColor = finishType === 'paint' && typeof input.paintColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(input.paintColor)
+    ? input.paintColor.toUpperCase()
+    : null;
+  if (finishType === 'paint' && !paintColor) throw new GiftAccessError('Paint color is required.', 400, 'validation');
+  const title = text(input.title, 255, true);
+  const connection = await databasePool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute<RowDataPacket[]>(`
+      SELECT id, request_no FROM gift_print_requests
+      WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' AND request_status = 'draft'
+      FOR UPDATE
+    `, [draftRequestId, employee.id]);
+    if (!rows[0]) throw new GiftAccessError('AI gift draft was not found.', 404, 'not_found');
+    const [assetRows] = await connection.execute<RowDataPacket[]>(`
+      SELECT a.id FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = ? AND a.asset_kind = 'model_file'
+      ORDER BY ra.created_at DESC LIMIT 1
+    `, [draftRequestId]);
+    if (!assetRows[0]) throw new GiftAccessError('Generate a 3D model before submitting the print request.', 409, 'validation');
+    await connection.execute<ResultSetHeader>(`
+      UPDATE gift_print_requests SET title = ?, customer_company = ?, business_scene = ?, quantity = ?,
+        finish_type = ?, paint_color = ?, requested_completion_date = ?, pickup_location = ?, request_notes = ?,
+        specifications = ?, source_asset_id = ?, request_status = 'submitted', submitted_at = CURRENT_TIMESTAMP(3)
+      WHERE id = ?
+    `, [
+      title, text(input.customerCompany, 255), text(input.businessScene, 128), positiveInteger(input.quantity),
+      finishType, paintColor, dateOnly(input.requestedCompletionDate), text(input.pickupLocation, 255) || '上海总部前台',
+      text(input.requestNotes, 5000), input.specifications && typeof input.specifications === 'object' ? JSON.stringify(input.specifications) : null,
+      assetRows[0].id, draftRequestId,
+    ]);
+    await connection.execute<ResultSetHeader>(`
+      INSERT INTO gift_request_events (request_id, actor_employee_id, event_type, from_status, to_status, comment_text)
+      VALUES (?, ?, 'status_changed', 'draft', 'submitted', '员工提交 AI 礼品打印申请')
+    `, [draftRequestId, employee.id]);
+    await connection.commit();
+    return { id: draftRequestId, requestNo: String(rows[0].request_no) };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function createGiftPrintRequest(session: GiftSession, input: Record<string, unknown>) {
   const employee = await requireGiftEmployeeAccess(session);
   const requestType = typeof input.requestType === 'string' && requestTypes.has(input.requestType) ? input.requestType : null;
@@ -139,7 +266,7 @@ export async function createGiftPrintRequest(session: GiftSession, input: Record
     const [modelRows] = await databasePool().execute<RowDataPacket[]>('SELECT id FROM gift_models WHERE id = ? AND publication_status = \'published\' LIMIT 1', [modelId]);
     if (!modelRows[0]) throw new GiftAccessError('The selected model is unavailable.', 409, 'validation');
   }
-  const requestNo = `UG${new Date().toISOString().slice(2, 10).replace(/-/g, '')}${randomBytes(3).toString('hex').toUpperCase()}`;
+  const requestNo = giftRequestNumber();
   const title = text(input.title, 255, true);
   const connection = await databasePool().getConnection();
   try {

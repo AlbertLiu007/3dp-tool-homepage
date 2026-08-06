@@ -20,10 +20,10 @@ export function giftAiIdempotencyKey(request: Request) {
   return request.headers.get('Idempotency-Key')?.trim() || undefined;
 }
 
-export async function withGiftAiUsage<T>(session: Awaited<ReturnType<typeof requireGiftEmployee>>, usageType: GiftAiUsageType, operation: () => Promise<T>, requestId?: string, metadata?: { provider?: string; model?: string }) {
+export async function withGiftAiUsage<T>(session: Awaited<ReturnType<typeof requireGiftEmployee>>, usageType: GiftAiUsageType, operation: (reservation: { requestId: string }) => Promise<T>, requestId?: string, metadata?: { provider?: string; model?: string }) {
   const reservation = await reserveGiftAiUsage(session, usageType, requestId, metadata);
   try {
-    const result = await operation();
+    const result = await operation(reservation);
     await settleGiftAiUsage(reservation.requestId, 'succeeded');
     return result;
   } catch (error) {

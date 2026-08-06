@@ -346,9 +346,10 @@ export async function updateGiftOpsModel(actor: GiftEmployeeAccess, modelId: num
 
 export async function listGiftOpsPrintRequests(status?: string) {
   const parameters: (string | number | null)[] = [];
-  const allowed = ['draft', 'submitted', 'reviewing', 'approved', 'rejected', 'queued', 'printing', 'ready', 'completed', 'cancelled'];
-  const where = status && allowed.includes(status) ? 'WHERE r.request_status = ?' : '';
-  if (where && status) parameters.push(status);
+  const allowed = ['submitted', 'reviewing', 'approved', 'rejected', 'queued', 'printing', 'ready', 'completed', 'cancelled'];
+  const hasStatusFilter = Boolean(status && allowed.includes(status));
+  const where = hasStatusFilter ? 'WHERE r.request_status = ?' : "WHERE r.request_status <> 'draft'";
+  if (hasStatusFilter && status) parameters.push(status);
   const [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT r.*, requester.display_name AS requester_name, assignee.display_name AS assignee_name, m.title_zh AS model_title
     FROM gift_print_requests r

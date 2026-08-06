@@ -1,3 +1,5 @@
+import { ensureServerStl } from '@/lib/model/server-glb-to-stl';
+
 type ImageApiItem = {
   b64_json?: string;
   url?: string;
@@ -8,22 +10,23 @@ type ImageApiResponse = {
   error?: { message?: string };
 };
 
-type HunyuanSubmitResponse = {
-  id?: string;
-  request_id?: string;
+type TripoEnvelope<T> = {
+  code?: number;
+  message?: string;
+  data?: T;
+};
+
+type TripoTask = {
+  task_id?: string;
   status?: string;
-  error?: { message?: string };
-};
-
-type HunyuanQueryItem = {
-  type?: string;
-  url?: string;
-  preview_image_url?: string;
-};
-
-type HunyuanQueryResponse = HunyuanSubmitResponse & {
-  data?: HunyuanQueryItem[];
+  progress?: number;
+  output?: {
+    model_url?: string;
+    rendered_image_url?: string;
+  };
+  error_code?: number;
   error_message?: string;
+  credits_consumed?: number;
 };
 
 export type GeneratedGiftImage = {
@@ -37,6 +40,7 @@ export type WhiteModelJob = {
 };
 
 export type WhiteModelQuery = {
+  id: string;
   status: 'queued' | 'in_progress' | 'completed' | 'failed';
   models: { type: string; url: string; previewImageUrl?: string }[];
 };
@@ -100,14 +104,29 @@ function imageConfiguration() {
   };
 }
 
-function hunyuanConfiguration() {
-  const faceCount = Number(process.env.HUNYUAN_3D_FACE_COUNT || '300000');
+export const TRIPO_3D_MODEL = 'v3.1-20260211';
+export const TRIPO_3D_FACE_LIMIT = 1_500_000;
+export const TRIPO_3D_MAX_CREDITS = 20;
+
+function tripoConfiguration() {
+  const apiKey = process.env.TRIPO_3D_API_KEY?.trim() || process.env.TRIPO_API_KEY?.trim();
+  if (!apiKey) throw new GiftAiError('TRIPO_3D_API_KEY is not configured.', 503, 'configuration');
+  const configuredModel = process.env.TRIPO_3D_MODEL?.trim() || TRIPO_3D_MODEL;
+  const configuredFaceLimit = Number(process.env.TRIPO_3D_FACE_LIMIT || TRIPO_3D_FACE_LIMIT);
+  const configuredGeometryQuality = process.env.TRIPO_3D_GEOMETRY_QUALITY?.trim() || 'standard';
+  if (configuredModel !== TRIPO_3D_MODEL || configuredFaceLimit !== TRIPO_3D_FACE_LIMIT || configuredGeometryQuality !== 'standard') {
+    throw new GiftAiError(
+      `The Tripo cost guard requires ${TRIPO_3D_MODEL}, ${TRIPO_3D_FACE_LIMIT} faces, standard geometry, and no textures.`,
+      503,
+      'configuration',
+    );
+  }
   return {
-    baseUrl: normalizedBaseUrl(process.env.HUNYUAN_3D_BASE_URL?.trim() || 'https://tokenhub.tencentmaas.com/v1/api/3d'),
-    apiKey: requiredEnvironmentVariable('HUNYUAN_3D_API_KEY'),
-    model: process.env.HUNYUAN_3D_MODEL?.trim() || 'hy-3d-3.1',
-    resultFormat: process.env.HUNYUAN_3D_RESULT_FORMAT?.trim() || 'STL',
-    faceCount: Number.isInteger(faceCount) && faceCount >= 3000 && faceCount <= 1_500_000 ? faceCount : 300000,
+    baseUrl: normalizedBaseUrl(process.env.TRIPO_3D_BASE_URL?.trim() || 'https://openapi.tripo3d.ai/v3'),
+    apiKey,
+    model: TRIPO_3D_MODEL,
+    faceLimit: TRIPO_3D_FACE_LIMIT,
+    geometryQuality: 'standard' as const,
   };
 }
 
@@ -121,11 +140,19 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   }
 
   if (!response.ok) {
-    const message = (payload as ImageApiResponse | undefined)?.error?.message;
+    const errorPayload = payload as (ImageApiResponse & { message?: string }) | undefined;
+    const message = errorPayload?.error?.message || errorPayload?.message;
     throw new GiftAiError(message || `Upstream request failed with HTTP ${response.status}.`);
   }
   if (!payload) throw new GiftAiError('Upstream returned an invalid JSON response.');
   return payload;
+}
+
+async function readTripoResponse<T>(response: Response): Promise<T> {
+  const payload = await readJsonResponse<TripoEnvelope<T>>(response);
+  if (payload.code !== 0) throw new GiftAiError(payload.message || `Tripo request failed with code ${payload.code ?? 'unknown'}.`);
+  if (!payload.data) throw new GiftAiError('Tripo returned an empty response.');
+  return payload.data;
 }
 
 async function normalizeImage(payload: ImageApiResponse): Promise<GeneratedGiftImage> {
@@ -192,10 +219,59 @@ export async function editGiftImage(input: { image: File; mask?: File; prompt: s
   return normalizeImage(await readJsonResponse<ImageApiResponse>(response));
 }
 
+type TripoJobReference = {
+  stage: 'generation' | 'conversion';
+  generationTaskId: string;
+  conversionTaskId?: string;
+};
+
+const TRIPO_TASK_ID = /^[A-Za-z0-9_-]{8,100}$/;
+
+function generationJobId(taskId: string) {
+  return `tripo:g:${taskId}`;
+}
+
+function parseTripoJobId(id: string): TripoJobReference {
+  const parts = id.split(':');
+  if (parts.length === 3 && parts[0] === 'tripo' && parts[1] === 'g' && TRIPO_TASK_ID.test(parts[2])) {
+    return { stage: 'generation', generationTaskId: parts[2] };
+  }
+  if (parts.length === 4 && parts[0] === 'tripo' && parts[1] === 'c' && TRIPO_TASK_ID.test(parts[2]) && TRIPO_TASK_ID.test(parts[3])) {
+    return { stage: 'conversion', generationTaskId: parts[2], conversionTaskId: parts[3] };
+  }
+  throw new GiftAiError('The Tripo model job ID is invalid.', 400, 'validation');
+}
+
+async function queryTripoTask(taskId: string) {
+  const configuration = tripoConfiguration();
+  const response = await fetch(`${configuration.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'GET',
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${configuration.apiKey}`,
+      Accept: 'application/json',
+    },
+  });
+  return readTripoResponse<TripoTask>(response);
+}
+
 export async function submitWhiteModel(image: File): Promise<WhiteModelJob> {
-  const configuration = hunyuanConfiguration();
-  const imageBase64 = Buffer.from(await image.arrayBuffer()).toString('base64');
-  const response = await fetch(`${configuration.baseUrl}/submit`, {
+  const configuration = tripoConfiguration();
+  const upload = new FormData();
+  upload.set('file', image, image.name || 'gift-reference.png');
+  const uploadResponse = await fetch(`${configuration.baseUrl}/files`, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${configuration.apiKey}`,
+      Accept: 'application/json',
+    },
+    body: upload,
+  });
+  const uploaded = await readTripoResponse<{ file_token?: string }>(uploadResponse);
+  if (!uploaded.file_token) throw new GiftAiError('Tripo did not return an image file token.');
+
+  const generationResponse = await fetch(`${configuration.baseUrl}/generation/image-to-model`, {
     method: 'POST',
     cache: 'no-store',
     headers: {
@@ -204,47 +280,71 @@ export async function submitWhiteModel(image: File): Promise<WhiteModelJob> {
       Accept: 'application/json',
     },
     body: JSON.stringify({
+      input: uploaded.file_token,
       model: configuration.model,
-      image_base64: imageBase64,
-      generate_type: 'Geometry',
-      enable_pbr: false,
-      result_format: configuration.resultFormat,
-      face_count: configuration.faceCount,
+      texture: false,
+      pbr: false,
+      export_uv: false,
+      face_limit: configuration.faceLimit,
+      geometry_quality: configuration.geometryQuality,
+      auto_size: false,
     }),
   });
-  const payload = await readJsonResponse<HunyuanSubmitResponse>(response);
-  if (!payload.id) throw new GiftAiError(payload.error?.message || 'Hunyuan did not return a job ID.');
-  return { id: payload.id, status: payload.status || 'queued' };
+  const generated = await readTripoResponse<{ task_id?: string }>(generationResponse);
+  if (!generated.task_id || !TRIPO_TASK_ID.test(generated.task_id)) throw new GiftAiError('Tripo did not return a generation task ID.');
+  return { id: generationJobId(generated.task_id), status: 'queued' };
 }
 
-function normalizeHunyuanStatus(status: string | undefined): WhiteModelQuery['status'] {
+function normalizeTripoStatus(status: string | undefined): WhiteModelQuery['status'] {
   const normalized = status?.toLowerCase();
-  if (normalized === 'completed' || normalized === 'done') return 'completed';
-  if (normalized === 'failed' || normalized === 'fail') return 'failed';
-  if (normalized === 'in_progress' || normalized === 'run' || normalized === 'running') return 'in_progress';
+  if (normalized === 'success') return 'completed';
+  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'banned') return 'failed';
+  if (normalized === 'running') return 'in_progress';
   return 'queued';
 }
 
 export async function queryWhiteModel(id: string): Promise<WhiteModelQuery> {
-  const configuration = hunyuanConfiguration();
-  const response = await fetch(`${configuration.baseUrl}/query`, {
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      Authorization: `Bearer ${configuration.apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({ model: configuration.model, id }),
-  });
-  const payload = await readJsonResponse<HunyuanQueryResponse>(response);
-  const status = normalizeHunyuanStatus(payload.status);
+  const reference = parseTripoJobId(id);
+  const taskId = reference.stage === 'conversion' ? reference.conversionTaskId! : reference.generationTaskId;
+  const task = await queryTripoTask(taskId);
+  const status = normalizeTripoStatus(task.status);
+
+  if (status === 'failed') return { id, status, models: [] };
+  if (status !== 'completed') return { id, status, models: [] };
+
+  if (reference.stage === 'generation') {
+    if (typeof task.credits_consumed === 'number' && task.credits_consumed > TRIPO_3D_MAX_CREDITS) {
+      throw new GiftAiError(
+        `Tripo reported ${task.credits_consumed} credits for a task guarded at ${TRIPO_3D_MAX_CREDITS}. Further processing was stopped.`,
+        502,
+        'quota',
+      );
+    }
+    if (!task.output?.model_url) throw new GiftAiError(task.error_message || 'Tripo completed generation without a GLB model URL.');
+    try {
+      await ensureServerStl(id, task.output.model_url);
+    } catch (error) {
+      throw new GiftAiError(error instanceof Error ? `Server GLB-to-STL conversion failed: ${error.message}` : 'Server GLB-to-STL conversion failed.');
+    }
+    return {
+      id,
+      status: 'completed',
+      models: [
+        { type: 'stl', url: task.output.model_url, previewImageUrl: task.output.rendered_image_url },
+        { type: 'glb', url: task.output.model_url, previewImageUrl: task.output.rendered_image_url },
+      ],
+    };
+  }
+
+  if (!task.output?.model_url) throw new GiftAiError(task.error_message || 'Tripo completed the STL conversion without a model URL.');
+  const generationTask = await queryTripoTask(reference.generationTaskId).catch(() => undefined);
   return {
-    status,
-    models: (payload.data || []).flatMap((item) => item.type && item.url ? [{
-      type: item.type,
-      url: item.url,
-      previewImageUrl: item.preview_image_url,
-    }] : []),
+    id,
+    status: 'completed',
+    models: [{
+      type: 'stl',
+      url: task.output.model_url,
+      previewImageUrl: generationTask?.output?.rendered_image_url,
+    }],
   };
 }

@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import OSS from 'ali-oss';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool, GiftAccessError, type GiftEmployeeAccess } from '@/lib/gift-db';
@@ -111,6 +117,294 @@ async function uploadObject(file: File, objectKey: string, cacheControl: string)
     },
   });
   return { client, sha256 };
+}
+
+export type GiftDraftAsset = {
+  assetId: number;
+  requestId: number;
+  kind: 'reference_image' | 'render_image' | 'edit_mask' | 'model_file' | 'model_preview';
+  filename: string;
+  contentType: string;
+  extension: string;
+  size: number;
+  url: string;
+};
+
+type GiftDraftAssetKind = GiftDraftAsset['kind'];
+
+const draftAssetDescriptor: Record<GiftDraftAssetKind, { attachmentRole: 'source_model' | 'reference' | 'other'; maxBytes: number }> = {
+  reference_image: { attachmentRole: 'reference', maxBytes: 15 * 1024 * 1024 },
+  render_image: { attachmentRole: 'reference', maxBytes: 20 * 1024 * 1024 },
+  edit_mask: { attachmentRole: 'other', maxBytes: 10 * 1024 * 1024 },
+  model_file: { attachmentRole: 'source_model', maxBytes: 500 * 1024 * 1024 },
+  model_preview: { attachmentRole: 'reference', maxBytes: 20 * 1024 * 1024 },
+};
+
+function safeAssetExtension(filename: string, contentType: string, kind: GiftDraftAssetKind) {
+  const fromName = filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  if (fromName && fromName.length <= 8) return fromName === 'jpeg' ? 'jpg' : fromName;
+  if (contentType === 'image/jpeg') return 'jpg';
+  if (contentType === 'image/webp') return 'webp';
+  if (contentType === 'model/stl' || contentType === 'application/sla') return 'stl';
+  if (contentType.includes('gltf-binary')) return 'glb';
+  if (contentType.includes('gltf')) return 'gltf';
+  return kind === 'model_file' ? 'stl' : 'png';
+}
+
+function normalizedDraftAsset(row: RowDataPacket): GiftDraftAsset {
+  const assetId = Number(row.id);
+  return {
+    assetId,
+    requestId: Number(row.request_id),
+    kind: String(row.asset_kind) as GiftDraftAssetKind,
+    filename: String(row.original_filename || 'gift-asset'),
+    contentType: String(row.content_type || 'application/octet-stream'),
+    extension: String(row.file_extension || ''),
+    size: Number(row.size_bytes || 0),
+    url: `/api/gift/assets/${assetId}`,
+  };
+}
+
+async function ownedDraftRequest(actor: GiftEmployeeAccess, requestId: number) {
+  if (!Number.isInteger(requestId) || requestId <= 0) throw new GiftAccessError('Draft request ID is invalid.', 400, 'validation');
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT id, request_no FROM gift_print_requests
+    WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' AND request_status = 'draft'
+    LIMIT 1
+  `, [requestId, actor.id]);
+  if (!rows[0]) throw new GiftAccessError('AI gift draft was not found.', 404, 'not_found');
+  return { id: Number(rows[0].id), requestNo: String(rows[0].request_no) };
+}
+
+async function findDraftAsset(requestId: number, kind: GiftDraftAssetKind, filters: { sha256?: string; providerJobId?: string }) {
+  const clauses = ['ra.request_id = ?', 'a.asset_kind = ?', "a.asset_status = 'active'"];
+  const parameters: (string | number)[] = [requestId, kind];
+  if (filters.sha256) { clauses.push('a.sha256 = ?'); parameters.push(filters.sha256); }
+  if (filters.providerJobId) {
+    clauses.push("JSON_UNQUOTE(JSON_EXTRACT(a.metadata, '$.providerJobId')) = ?");
+    parameters.push(filters.providerJobId);
+  }
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT a.*, ra.request_id FROM gift_request_attachments ra
+    INNER JOIN gift_assets a ON a.id = ra.asset_id
+    WHERE ${clauses.join(' AND ')} ORDER BY a.id DESC LIMIT 1
+  `, parameters);
+  return rows[0] ? normalizedDraftAsset(rows[0]) : null;
+}
+
+export async function findGiftDraftGeneratedAsset(actor: GiftEmployeeAccess, requestId: number, providerJobId: string, kind: GiftDraftAssetKind) {
+  await ownedDraftRequest(actor, requestId);
+  return findDraftAsset(requestId, kind, { providerJobId });
+}
+
+export async function assertGiftDraftAsset(actor: GiftEmployeeAccess, requestId: number, assetId: number) {
+  await ownedDraftRequest(actor, requestId);
+  if (!Number.isInteger(assetId) || assetId <= 0) throw new GiftAccessError('Source asset ID is invalid.', 400, 'validation');
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT a.*, ra.request_id FROM gift_request_attachments ra
+    INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+    WHERE ra.request_id = ? AND ra.asset_id = ? LIMIT 1
+  `, [requestId, assetId]);
+  if (!rows[0]) throw new GiftAccessError('The source asset does not belong to this draft.', 404, 'not_found');
+  return normalizedDraftAsset(rows[0]);
+}
+
+async function registerDraftAsset(input: {
+  actor: GiftEmployeeAccess;
+  requestId: number;
+  kind: GiftDraftAssetKind;
+  objectKey: string;
+  filename: string;
+  contentType: string;
+  extension: string;
+  size: number;
+  sha256: string;
+  metadata: Record<string, unknown>;
+}) {
+  const bucket = required('GIFT_OSS_BUCKET');
+  const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
+  const connection = await databasePool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [requestRows] = await connection.execute<RowDataPacket[]>(`
+      SELECT id FROM gift_print_requests
+      WHERE id = ? AND requester_employee_id = ? AND request_type = 'ai_gift' AND request_status = 'draft'
+      FOR UPDATE
+    `, [input.requestId, input.actor.id]);
+    if (!requestRows[0]) throw new GiftAccessError('AI gift draft was not found.', 404, 'not_found');
+    const [result] = await connection.execute<ResultSetHeader>(`
+      INSERT INTO gift_assets (
+        owner_employee_id, asset_kind, storage_region, bucket_name, object_key, object_key_hash,
+        original_filename, content_type, file_extension, size_bytes, sha256, visibility, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private', ?)
+    `, [
+      input.actor.id, input.kind, region, bucket, input.objectKey, createHash('sha256').update(input.objectKey).digest('hex'),
+      input.filename.slice(0, 255), input.contentType, input.extension, input.size, input.sha256, JSON.stringify(input.metadata),
+    ]);
+    const assetId = Number(result.insertId);
+    await connection.execute<ResultSetHeader>(`
+      INSERT INTO gift_request_attachments (request_id, asset_id, attachment_role, uploaded_by_employee_id, visible_to_requester)
+      VALUES (?, ?, ?, ?, 1)
+    `, [input.requestId, assetId, draftAssetDescriptor[input.kind].attachmentRole, input.actor.id]);
+    await connection.execute<ResultSetHeader>(`
+      UPDATE gift_print_requests SET source_asset_id = IF(? = 'model_file', ?, source_asset_id), updated_at = CURRENT_TIMESTAMP(3)
+      WHERE id = ?
+    `, [input.kind, assetId, input.requestId]);
+    await connection.commit();
+    return {
+      assetId,
+      requestId: input.requestId,
+      kind: input.kind,
+      filename: input.filename,
+      contentType: input.contentType,
+      extension: input.extension,
+      size: input.size,
+      url: `/api/gift/assets/${assetId}`,
+    } satisfies GiftDraftAsset;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function persistGiftDraftBufferAsset(input: {
+  actor: GiftEmployeeAccess;
+  requestId: number;
+  kind: GiftDraftAssetKind;
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const request = await ownedDraftRequest(input.actor, input.requestId);
+  const descriptor = draftAssetDescriptor[input.kind];
+  if (!input.buffer.byteLength || input.buffer.byteLength > descriptor.maxBytes) throw new GiftAccessError('Gift asset exceeds the storage limit.', 413, 'validation');
+  const sha256 = createHash('sha256').update(input.buffer).digest('hex');
+  const existing = await findDraftAsset(input.requestId, input.kind, { sha256 });
+  if (existing) return existing;
+  const extension = safeAssetExtension(input.filename, input.contentType, input.kind);
+  const objectKey = `drafts/${input.actor.id}/${request.requestNo}/${input.kind}/${randomUUID()}.${extension}`;
+  const client = await ossClient();
+  await client.put(objectKey, input.buffer, {
+    mime: input.contentType,
+    headers: { 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.filename)}` },
+  });
+  try {
+    return await registerDraftAsset({ ...input, objectKey, extension, size: input.buffer.byteLength, sha256, metadata: input.metadata || {} });
+  } catch (error) {
+    await client.delete(objectKey).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function persistGiftDraftFileAsset(input: {
+  actor: GiftEmployeeAccess;
+  requestId: number;
+  kind: Extract<GiftDraftAssetKind, 'reference_image' | 'edit_mask'>;
+  file: File;
+  metadata?: Record<string, unknown>;
+}) {
+  return persistGiftDraftBufferAsset({
+    actor: input.actor,
+    requestId: input.requestId,
+    kind: input.kind,
+    buffer: Buffer.from(await input.file.arrayBuffer()),
+    filename: input.file.name || (input.kind === 'edit_mask' ? 'edit-mask.png' : 'reference-image.png'),
+    contentType: input.file.type || 'image/png',
+    metadata: input.metadata,
+  });
+}
+
+export async function persistGiftDraftGeneratedImage(input: {
+  actor: GiftEmployeeAccess;
+  requestId: number;
+  image: { dataUrl?: string; url?: string };
+  filename: string;
+  kind?: Extract<GiftDraftAssetKind, 'render_image' | 'model_preview'>;
+  metadata?: Record<string, unknown>;
+}) {
+  let buffer: Buffer;
+  let contentType = 'image/png';
+  if (input.image.dataUrl) {
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(input.image.dataUrl);
+    if (!match) throw new GiftAccessError('Generated image data is invalid.', 502, 'validation');
+    contentType = match[1];
+    buffer = Buffer.from(match[2], 'base64');
+  } else if (input.image.url) {
+    const sourceUrl = new URL(input.image.url);
+    if (sourceUrl.protocol !== 'https:') throw new GiftAccessError('Generated image URL is invalid.', 502, 'validation');
+    const response = await fetch(input.image.url, { cache: 'no-store', signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) throw new GiftAccessError('Unable to download the generated image.', 502, 'configuration');
+    contentType = response.headers.get('content-type')?.split(';')[0] || contentType;
+    if (!contentType.startsWith('image/')) throw new GiftAccessError('Generated image content type is invalid.', 502, 'validation');
+    buffer = Buffer.from(await response.arrayBuffer());
+  } else {
+    throw new GiftAccessError('Generated image is empty.', 502, 'validation');
+  }
+  const asset = await persistGiftDraftBufferAsset({
+    actor: input.actor, requestId: input.requestId, kind: input.kind || 'render_image', buffer,
+    filename: input.filename, contentType, metadata: input.metadata,
+  });
+  return { assetId: asset.assetId, url: asset.url };
+}
+
+export async function persistGiftDraftRemoteAsset(input: {
+  actor: GiftEmployeeAccess;
+  requestId: number;
+  kind: Extract<GiftDraftAssetKind, 'model_file' | 'model_preview'>;
+  sourceUrl: string;
+  filename: string;
+  contentType: string;
+  providerJobId: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const existing = await findGiftDraftGeneratedAsset(input.actor, input.requestId, input.providerJobId, input.kind);
+  if (existing) return existing;
+  const sourceUrl = new URL(input.sourceUrl);
+  if (sourceUrl.protocol !== 'https:') throw new GiftAccessError('Generated asset URL is invalid.', 502, 'validation');
+  const request = await ownedDraftRequest(input.actor, input.requestId);
+  const response = await fetch(input.sourceUrl, { cache: 'no-store', signal: AbortSignal.timeout(300_000) });
+  if (!response.ok || !response.body) throw new GiftAccessError('Unable to download the generated asset.', 502, 'configuration');
+  const declaredSize = Number(response.headers.get('content-length') || 0);
+  const maxBytes = draftAssetDescriptor[input.kind].maxBytes;
+  if (declaredSize > maxBytes) throw new GiftAccessError('Generated asset exceeds the storage limit.', 413, 'validation');
+  const contentType = response.headers.get('content-type')?.split(';')[0] || input.contentType;
+  const extension = safeAssetExtension(input.filename, contentType, input.kind);
+  const objectKey = `drafts/${input.actor.id}/${request.requestNo}/${input.kind}/${randomUUID()}.${extension}`;
+  const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'unionam-gift-'));
+  const temporaryFile = path.join(temporaryDirectory, `asset.${extension}`);
+  const hash = createHash('sha256');
+  let size = 0;
+  const meter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      size += chunk.length;
+      if (size > maxBytes) return callback(new GiftAccessError('Generated asset exceeds the storage limit.', 413, 'validation'));
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+  const client = await ossClient();
+  try {
+    await pipeline(Readable.fromWeb(response.body as never), meter, createWriteStream(temporaryFile, { mode: 0o600 }));
+    await client.multipartUpload(objectKey, temporaryFile, {
+      parallel: 3,
+      partSize: 5 * 1024 * 1024,
+      headers: { 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.filename)}` },
+    });
+    try {
+      return await registerDraftAsset({
+        actor: input.actor, requestId: input.requestId, kind: input.kind, objectKey, filename: input.filename,
+        contentType, extension, size, sha256: hash.digest('hex'), metadata: { ...(input.metadata || {}), providerJobId: input.providerJobId },
+      });
+    } catch (error) {
+      await client.delete(objectKey).catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: number, file: File, requestedKind: string, ip?: string) {

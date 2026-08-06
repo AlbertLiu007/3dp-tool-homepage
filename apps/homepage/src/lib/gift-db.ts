@@ -447,6 +447,18 @@ export async function markGiftAiUsageRunning(requestId: string, providerJobId: s
   `, [providerJobId, requestId]);
 }
 
+export async function replaceGiftAiProviderJob(requestId: string, currentProviderJobId: string, nextProviderJobId: string) {
+  if (requestId.startsWith('dev-') || currentProviderJobId === nextProviderJobId) return nextProviderJobId;
+  await databasePool().execute<ResultSetHeader>(`
+    UPDATE gift_ai_usage_events SET provider_job_id = ?, updated_at = CURRENT_TIMESTAMP(3)
+    WHERE request_uid = ? AND provider_job_id = ? AND usage_status = 'running'
+  `, [nextProviderJobId, requestId, currentProviderJobId]);
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT provider_job_id FROM gift_ai_usage_events WHERE request_uid = ? LIMIT 1
+  `, [requestId]);
+  return String(rows[0]?.provider_job_id || nextProviderJobId);
+}
+
 export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' | 'refunded', error?: unknown) {
   if (requestId.startsWith('dev-')) return;
   const connection = await databasePool().getConnection();
@@ -480,14 +492,26 @@ export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' 
 }
 
 export async function getOwnedGiftAiJob(session: GiftSession, providerJobId: string) {
-  if (process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee') return { requestId: 'dev-owned-job', status: 'running' };
-  const [rows] = await databasePool().execute<RowDataPacket[]>(`
-    SELECT u.request_uid, u.usage_status
+  if (process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee') return { requestId: 'dev-owned-job', status: 'running', providerJobId };
+  let [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT u.request_uid, u.usage_status, u.provider_job_id
     FROM gift_ai_usage_events u
     INNER JOIN gift_employees e ON e.id = u.employee_id
     WHERE e.corp_id = ? AND e.wecom_user_id = ? AND u.provider_job_id = ? AND u.usage_type = 'image_to_3d'
     LIMIT 1
   `, [session.corpId, session.userId, providerJobId]);
+  const generationMatch = /^tripo:g:([A-Za-z0-9_-]{8,100})$/.exec(providerJobId);
+  if (!rows[0] && generationMatch) {
+    const conversionPrefix = `tripo:c:${generationMatch[1]}:`;
+    [rows] = await databasePool().execute<RowDataPacket[]>(`
+      SELECT u.request_uid, u.usage_status, u.provider_job_id
+      FROM gift_ai_usage_events u
+      INNER JOIN gift_employees e ON e.id = u.employee_id
+      WHERE e.corp_id = ? AND e.wecom_user_id = ?
+        AND LEFT(u.provider_job_id, ?) = ? AND u.usage_type = 'image_to_3d'
+      LIMIT 1
+    `, [session.corpId, session.userId, conversionPrefix.length, conversionPrefix]);
+  }
   if (!rows[0]) throw new GiftAccessError('The model job was not found.', 404, 'not_found');
-  return { requestId: String(rows[0].request_uid), status: String(rows[0].usage_status) };
+  return { requestId: String(rows[0].request_uid), status: String(rows[0].usage_status), providerJobId: String(rows[0].provider_job_id) };
 }

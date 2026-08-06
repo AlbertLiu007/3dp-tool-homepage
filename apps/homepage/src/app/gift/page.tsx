@@ -283,6 +283,8 @@ type GiftModel = {
   modelAssetId?: number | null;
   previewAssetId?: number | null;
   generatedModelUrl?: string;
+  generatedModelAssetId?: number;
+  draftRequestId?: number;
 };
 
 const modelCatalog: Record<GiftLanguage, GiftModel[]> = {
@@ -669,19 +671,20 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
     setSaving(true); setError('');
     try {
       const requestType = typeof model.id === 'number' ? 'catalog_gift' : 'ai_gift';
-      const response = await fetch('/api/gift/requests', {
-        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType, modelId: typeof model.id === 'number' ? model.id : null, title: model.name,
-          customerCompany, businessScene: model.useCase, quantity, finishType,
-          paintColor: finishType === 'paint' ? paintColor : null, requestedCompletionDate: deadline || null,
-          pickupLocation: t.pickupValue, requestNotes: notes,
-          specifications: { source: requestType, generatedModelUrl: model.generatedModelUrl || null },
-        }),
+      const requestPayload = {
+        requestType, modelId: typeof model.id === 'number' ? model.id : null, title: model.name,
+        customerCompany, businessScene: model.useCase, quantity, finishType,
+        paintColor: finishType === 'paint' ? paintColor : null, requestedCompletionDate: deadline || null,
+        pickupLocation: t.pickupValue, requestNotes: notes,
+        specifications: { source: requestType, generatedModelAssetId: model.generatedModelAssetId || null },
+      };
+      const response = await fetch(model.draftRequestId ? `/api/gift/requests/${model.draftRequestId}` : '/api/gift/requests', {
+        method: model.draftRequestId ? 'PATCH' : 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(model.draftRequestId ? { action: 'submit', ...requestPayload } : requestPayload),
       });
       const result = await response.json() as { id?: number; requestNo?: string; message?: string };
       if (!response.ok || !result.id) throw new Error(result.message || '申请提交失败');
-      if (model.generatedModelUrl) {
+      if (model.generatedModelUrl && !model.generatedModelAssetId && !model.draftRequestId) {
         const modelResponse = await fetch(model.generatedModelUrl);
         if (!modelResponse.ok) throw new Error('申请已创建，但生成模型附件读取失败，请在“我的申请”中补充上传。');
         const formData = new FormData();
@@ -896,7 +899,7 @@ function RenderConcept({ finish, index, source, selected, onSelect, labels }: { 
   );
 }
 
-type GiftImageResult = { dataUrl?: string; url?: string };
+type GiftImageResult = { assetId?: number; dataUrl?: string; url?: string };
 type GiftAiClientError = { configuration: boolean; reason?: string; message?: string };
 
 const MODEL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -907,7 +910,7 @@ function canvasBlob(canvas: HTMLCanvasElement, type: 'image/webp' | 'image/jpeg'
 }
 
 async function compressModelImage(file: File) {
-  if (file.size <= MODEL_IMAGE_MAX_BYTES) return { file, compressed: false };
+  if (file.size <= MODEL_IMAGE_MAX_BYTES && ['image/jpeg', 'image/png'].includes(file.type)) return { file, compressed: false };
 
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const longestEdge = Math.max(bitmap.width, bitmap.height);
@@ -932,14 +935,12 @@ async function compressModelImage(file: File) {
       context.drawImage(bitmap, 0, 0, width, height);
 
       for (const quality of qualities) {
-        let blob = await canvasBlob(canvas, 'image/webp', quality);
-        if (!blob || blob.type !== 'image/webp') blob = await canvasBlob(canvas, 'image/jpeg', quality);
+        const blob = await canvasBlob(canvas, 'image/jpeg', quality);
         if (!blob) continue;
         if (!smallest || blob.size < smallest.size) smallest = blob;
         if (blob.size <= MODEL_IMAGE_TARGET_BYTES) {
-          const extension = blob.type === 'image/webp' ? 'webp' : 'jpg';
           const baseName = file.name.replace(/\.[^.]+$/, '') || 'gift-reference';
-          return { file: new File([blob], `${baseName}.${extension}`, { type: blob.type, lastModified: Date.now() }), compressed: true };
+          return { file: new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() }), compressed: true };
         }
       }
     }
@@ -948,9 +949,8 @@ async function compressModelImage(file: File) {
   }
 
   if (smallest && smallest.size <= MODEL_IMAGE_MAX_BYTES) {
-    const extension = smallest.type === 'image/webp' ? 'webp' : 'jpg';
     const baseName = file.name.replace(/\.[^.]+$/, '') || 'gift-reference';
-    return { file: new File([smallest], `${baseName}.${extension}`, { type: smallest.type, lastModified: Date.now() }), compressed: true };
+    return { file: new File([smallest], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() }), compressed: true };
   }
   throw new Error('Image compression could not reach the upload limit.');
 }
@@ -987,13 +987,16 @@ function monochromePaintPrompt(paintColor: string) {
   return `Re-render the complete isolated subject in exactly one uniform matte spray paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. Remove original surface colors, patterns, text, and material variation while preserving only natural light and form-defining shadows. No gradients, color blocking, accent colors, metallic parts, or secondary materials. Keep the pure white #FFFFFF background. Do not add, remove, crop, or redesign any geometry.`;
 }
 
-function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: (model: GiftModel) => void }) {
+function AiGiftStudio({ language, onOrder, onDraftUpdated }: { language: GiftLanguage; onOrder: (model: GiftModel) => void; onDraftUpdated: () => void }) {
   const labels = studioCopy[language];
   const [mode, setMode] = useState<AiCreationMode>('image');
   const [imageOriginalFile, setImageOriginalFile] = useState<File | null>(null);
   const [imageOriginalUrl, setImageOriginalUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageDraftRequestId, setImageDraftRequestId] = useState<number | null>(null);
+  const [imagePreparedAssetId, setImagePreparedAssetId] = useState<number | null>(null);
+  const [imagePaintAssetId, setImagePaintAssetId] = useState<number | null>(null);
   const [imageView, setImageView] = useState<ImageInputView>('original');
   const [imagePreparationFailed, setImagePreparationFailed] = useState(false);
   const [imagePaintPreview, setImagePaintPreview] = useState<string | null>(null);
@@ -1016,6 +1019,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   const paintMenuRef = useRef<HTMLDivElement>(null);
   const [briefStatus, setBriefStatus] = useState<BriefStatus>('idle');
   const [renderImages, setRenderImages] = useState<GiftImageResult[]>([]);
+  const [briefDraftRequestId, setBriefDraftRequestId] = useState<number | null>(null);
   const [selectedRender, setSelectedRender] = useState<number | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
   const [editMask, setEditMask] = useState<File | null>(null);
@@ -1024,7 +1028,19 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
   const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
+  const notifiedDraftIdsRef = useRef(new Set<number>());
   const selectedProfileTags = profileLabels(language, profileSelections);
+
+  useEffect(() => {
+    let hasNewDraft = false;
+    for (const draftId of [imageDraftRequestId, briefDraftRequestId]) {
+      if (draftId && !notifiedDraftIdsRef.current.has(draftId)) {
+        notifiedDraftIdsRef.current.add(draftId);
+        hasNewDraft = true;
+      }
+    }
+    if (hasNewDraft) onDraftUpdated();
+  }, [briefDraftRequestId, imageDraftRequestId, onDraftUpdated]);
 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -1075,10 +1091,21 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     setEditNotice(false);
   }
 
-  async function requestImageEdit(file: File, prompt: string, outputName: string) {
+  async function requestImageEdit(file: File, prompt: string, outputName: string, options: {
+    draftRequestId?: number | null;
+    sourceAssetId?: number | null;
+    stage: string;
+    title: string;
+  }) {
     const formData = new FormData();
     formData.set('image', file, file.name || 'gift-reference.png');
     formData.set('prompt', prompt);
+    formData.set('stage', options.stage);
+    formData.set('draftTitle', options.title);
+    formData.set('finishType', finish);
+    if (finish === 'paint') formData.set('paintColor', paintColor);
+    if (options.draftRequestId) formData.set('draftRequestId', String(options.draftRequestId));
+    if (options.sourceAssetId) formData.set('sourceAssetId', String(options.sourceAssetId));
     const response = await fetch('/api/gift/ai/edit', {
       method: 'POST',
       body: formData,
@@ -1086,10 +1113,11 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
     if (!response.ok) throw await apiErrorMessage(response);
-    const payload = await response.json() as { image?: GiftImageResult };
+    const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult; sourceAssetId?: number };
     const source = giftImageSource(payload.image);
     if (!source) throw { configuration: false, message: 'Image service did not return an edited image.' } satisfies GiftAiClientError;
-    return { source, file: await imageSourceToFile(source, outputName) };
+    if (!payload.draft?.id || !payload.image?.assetId) throw { configuration: false, message: 'Generated image was not saved to the gift draft.' } satisfies GiftAiClientError;
+    return { source, file: await imageSourceToFile(source, outputName), assetId: payload.image.assetId, sourceAssetId: payload.sourceAssetId, draftRequestId: payload.draft.id };
   }
 
   async function prepareImageForModel(sourceFile: File, preparationId: number) {
@@ -1103,10 +1131,16 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
       const compressedSource = await compressModelImage(sourceFile);
       if (imagePreparationIdRef.current !== preparationId) return;
       setImageOriginalFile(compressedSource.file);
-      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-white-background.png');
+      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-white-background.png', {
+        draftRequestId: imageDraftRequestId,
+        stage: 'white_background',
+        title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+      });
       if (imagePreparationIdRef.current !== preparationId) return;
+      setImageDraftRequestId(edited.draftRequestId);
       const prepared = await compressModelImage(edited.file);
       if (imagePreparationIdRef.current !== preparationId) return;
+      setImagePreparedAssetId(prepared.compressed ? null : edited.assetId);
       setImageFile(prepared.file);
       setImageUrl(prepared.compressed ? URL.createObjectURL(prepared.file) : edited.source);
       setImageView('prepared');
@@ -1134,6 +1168,8 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     setImageView('original');
     setImagePreparationFailed(false);
     setImagePaintPreview(null);
+    setImagePreparedAssetId(null);
+    setImagePaintAssetId(null);
     setImagePaintGenerating(false);
     setImagePreparing(Boolean(file));
     setImagePreparationNotice(file ? labels.imagePreparingWhite : null);
@@ -1159,8 +1195,15 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     clearAiError();
     setImagePaintGenerating(true);
     try {
-      const edited = await requestImageEdit(imageFile, monochromePaintPrompt(paintColor), 'gift-paint-preview.png');
+      const edited = await requestImageEdit(imageFile, monochromePaintPrompt(paintColor), 'gift-paint-preview.png', {
+        draftRequestId: imageDraftRequestId,
+        sourceAssetId: imagePreparedAssetId,
+        stage: 'paint_preview',
+        title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+      });
       if (imagePaintIdRef.current !== paintId) return;
+      setImageDraftRequestId(edited.draftRequestId);
+      setImagePaintAssetId(edited.assetId);
       setImagePaintPreview(edited.source);
       setImageView('paint');
       setImagePreparationNotice(labels.paintPreviewReady);
@@ -1172,7 +1215,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     }
   }
 
-  async function waitForWhiteModel(file: File) {
+  async function waitForWhiteModel(file: File, options: { draftRequestId?: number | null; sourceAssetId?: number | null; title: string }) {
     let prepared: Awaited<ReturnType<typeof compressModelImage>>;
     try {
       prepared = await compressModelImage(file);
@@ -1182,32 +1225,45 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     if (prepared.file.size > MODEL_IMAGE_MAX_BYTES) throw { configuration: false, reason: 'validation', message: labels.imageTooLarge } satisfies GiftAiClientError;
     const formData = new FormData();
     formData.set('image', prepared.file, prepared.file.name || 'gift-reference.webp');
+    formData.set('draftTitle', options.title);
+    formData.set('finishType', finish);
+    formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
+    formData.set('brief', brief);
+    if (finish === 'paint') formData.set('paintColor', paintColor);
+    if (options.draftRequestId) formData.set('draftRequestId', String(options.draftRequestId));
+    if (options.sourceAssetId && !prepared.compressed) formData.set('sourceAssetId', String(options.sourceAssetId));
     const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
     if (!submitResponse.ok) {
       const error = await apiErrorMessage(submitResponse);
       if (error.reason === 'validation' && error.message?.includes('5MB')) error.message = labels.imageTooLarge;
       throw error;
     }
-    const submitPayload = await submitResponse.json() as { job?: { id?: string } };
-    if (!submitPayload.job?.id) throw { configuration: false, message: 'Model service did not return a job ID.' };
+    const submitPayload = await submitResponse.json() as { draft?: { id?: number }; job?: { id?: string } };
+    if (!submitPayload.job?.id || !submitPayload.draft?.id) throw { configuration: false, message: 'Model service did not return a saved draft job.' };
+    let jobId = submitPayload.job.id;
+    const draftRequestId = submitPayload.draft.id;
 
     for (let attempt = 0; attempt < 120; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 5000));
-      const queryResponse = await fetch(`/api/gift/ai/3d/query?id=${encodeURIComponent(submitPayload.job.id)}`, { cache: 'no-store', credentials: 'same-origin' });
+      const queryResponse = await fetch(`/api/gift/ai/3d/query?id=${encodeURIComponent(jobId)}&draftRequestId=${draftRequestId}`, { cache: 'no-store', credentials: 'same-origin' });
       if (!queryResponse.ok) throw await apiErrorMessage(queryResponse);
-      const queryPayload = await queryResponse.json() as { job?: { status?: string; models?: { type: string; url: string; previewImageUrl?: string }[] } };
+      const queryPayload = await queryResponse.json() as { job?: { id?: string; status?: string; models?: { type: string; url: string; assetId?: number; previewImageUrl?: string; previewAssetId?: number }[] } };
+      if (queryPayload.job?.id) jobId = queryPayload.job.id;
       if (queryPayload.job?.status === 'completed') {
         const models = queryPayload.job.models || [];
         const preferred = models.find((model) => model.type.toLowerCase() === 'stl') || models.find((model) => ['glb', 'gltf'].includes(model.type.toLowerCase()));
         if (!preferred) throw { configuration: false, message: 'Model service did not return a supported model.' };
         const modelType = preferred.type.toLowerCase();
         if (modelType !== 'stl' && modelType !== 'glb' && modelType !== 'gltf') throw { configuration: false, message: 'Unsupported generated model format.' };
-        const assetBase = `/api/gift/ai/3d/file?id=${encodeURIComponent(submitPayload.job.id)}`;
+        if (!preferred.assetId || !preferred.url) throw { configuration: false, message: 'Generated model was not saved to the gift draft.' };
         return {
-          jobId: submitPayload.job.id,
+          jobId,
           modelType,
-          modelUrl: `${assetBase}&type=${modelType}`,
-          previewImageUrl: models.some((model) => model.previewImageUrl) ? `${assetBase}&type=preview` : undefined,
+          modelUrl: preferred.url,
+          previewImageUrl: preferred.previewImageUrl,
+          draftRequestId,
+          modelAssetId: preferred.assetId,
+          previewAssetId: preferred.previewAssetId,
         } satisfies GeneratedGiftModel;
       }
       if (queryPayload.job?.status === 'failed') throw { configuration: false, message: 'Model generation failed.' };
@@ -1220,7 +1276,13 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     clearAiError();
     setImageStatus('generating');
     try {
-      setImageModel(await waitForWhiteModel(imageFile));
+      const model = await waitForWhiteModel(imageFile, {
+        draftRequestId: imageDraftRequestId,
+        sourceAssetId: imagePreparedAssetId,
+        title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+      });
+      setImageDraftRequestId(model.draftRequestId || imageDraftRequestId);
+      setImageModel(model);
       setImageStatus('ready');
     } catch (error) {
       setImageStatus('idle');
@@ -1256,6 +1318,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
     imagePaintIdRef.current += 1;
     setImagePaintGenerating(false);
     setImagePaintPreview(null);
+    setImagePaintAssetId(null);
     if (imageView === 'paint') setImageView(imageUrl ? 'prepared' : 'original');
     if (imageFile) setImagePreparationNotice(labels.imagePrepared);
     if (mode === 'brief') resetBriefResults();
@@ -1273,11 +1336,21 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify({ prompt: renderPrompt(language, brief, selectedProfileTags, finish, paintColor) }),
+        body: JSON.stringify({
+          prompt: renderPrompt(language, brief, selectedProfileTags, finish, paintColor),
+          draftRequestId: briefDraftRequestId,
+          draftTitle: language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft',
+          businessScene: selectedProfileTags.slice(0, 4).join(' · '),
+          finishType: finish,
+          paintColor: finish === 'paint' ? paintColor : null,
+          brief,
+          specifications: { source: 'ai_brief', profileTags: selectedProfileTags },
+        }),
       });
       if (!response.ok) throw await apiErrorMessage(response);
-      const payload = await response.json() as { images?: GiftImageResult[] };
-      if (!payload.images?.length) throw { configuration: false, message: 'Image service did not return images.' };
+      const payload = await response.json() as { draft?: { id?: number }; images?: GiftImageResult[] };
+      if (!payload.draft?.id || !payload.images?.length || payload.images.some((image) => !image.assetId)) throw { configuration: false, message: 'Generated images were not saved to the gift draft.' };
+      setBriefDraftRequestId(payload.draft.id);
       setRenderImages(payload.images);
       setBriefStatus('render-ready');
     } catch (error) {
@@ -1287,7 +1360,8 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   }
 
   async function editSelectedImage() {
-    const source = selectedRender === null ? '' : giftImageSource(renderImages[selectedRender]);
+    const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
+    const source = giftImageSource(selectedImage);
     if (!source || !editPrompt.trim()) return;
     clearAiError();
     setEditing(true);
@@ -1295,6 +1369,15 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
       const sourceFile = await imageSourceToFile(source, 'gift-render.png');
       const formData = new FormData();
       formData.set('image', sourceFile);
+      formData.set('stage', 'render_edit');
+      formData.set('draftTitle', language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft');
+      formData.set('finishType', finish);
+      formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
+      formData.set('brief', brief);
+      if (finish === 'paint') formData.set('paintColor', paintColor);
+      if (briefDraftRequestId) formData.set('draftRequestId', String(briefDraftRequestId));
+      const selectedAssetId = selectedImage?.assetId;
+      if (selectedAssetId) formData.set('sourceAssetId', String(selectedAssetId));
       const finishConstraint = finish === 'paint'
         ? `Keep the entire gift in exactly one uniform solid paint color ${paintColor}. Do not introduce gradients, color blocking, accent colors, metallic parts, or secondary material colors.`
         : 'Keep the restrained antique bronze material and subtle patina consistent across the gift.';
@@ -1302,8 +1385,9 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
       if (editMask) formData.set('mask', editMask);
       const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
       if (!response.ok) throw await apiErrorMessage(response);
-      const payload = await response.json() as { image?: GiftImageResult };
-      if (!giftImageSource(payload.image)) throw { configuration: false, message: 'Image service did not return an edited image.' };
+      const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult };
+      if (!payload.draft?.id || !payload.image?.assetId || !giftImageSource(payload.image)) throw { configuration: false, message: 'Edited image was not saved to the gift draft.' };
+      setBriefDraftRequestId(payload.draft.id);
       setRenderImages((current) => [...current, payload.image!]);
       setSelectedRender(renderImages.length);
       setEditPrompt('');
@@ -1317,13 +1401,20 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
   }
 
   async function generateBriefModel() {
-    const source = selectedRender === null ? '' : giftImageSource(renderImages[selectedRender]);
+    const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
+    const source = giftImageSource(selectedImage);
     if (!source) return;
     clearAiError();
     setBriefStatus('generating-model');
     try {
       const file = await imageSourceToFile(source, 'selected-gift-render.png');
-      setBriefModel(await waitForWhiteModel(file));
+      const model = await waitForWhiteModel(file, {
+        draftRequestId: briefDraftRequestId,
+        sourceAssetId: selectedImage?.assetId,
+        title: language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft',
+      });
+      setBriefDraftRequestId(model.draftRequestId || briefDraftRequestId);
+      setBriefModel(model);
       setBriefStatus('model-ready');
     } catch (error) {
       setBriefStatus('render-ready');
@@ -1398,7 +1489,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
               <button type="button" onClick={generateImageModel} disabled={!imageFile || imagePreparing || imageStatus === 'generating'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_image_to_3d_click">{imagePreparing || imageStatus === 'generating' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{imagePreparing ? labels.imagePreparingWhite : imageStatus === 'generating' ? labels.modelQueued : labels.generateWhiteModel}</button>
             </div>
           </div>
-          {imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-image-${Date.now()}`, generatedModelUrl: imageModel?.modelUrl })} /> : null}
+          {imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-image-${Date.now()}`, generatedModelUrl: imageModel?.modelUrl, generatedModelAssetId: imageModel?.modelAssetId, previewAssetId: imageModel?.previewAssetId, draftRequestId: imageModel?.draftRequestId })} /> : null}
         </div>
       ) : (
         <div className="p-6 md:p-8">
@@ -1410,7 +1501,7 @@ function AiGiftStudio({ language, onOrder }: { language: GiftLanguage; onOrder: 
             {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}</div></div> : null}
 
             <button type="button" onClick={generateBriefModel} disabled={selectedRender === null || briefStatus === 'generating-model'} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_to_3d_click">{briefStatus === 'generating-model' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{briefStatus === 'generating-model' ? labels.modelQueued : labels.generateFromRender}</button></div> : null}
-          {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl })} /> : null}
+          {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
         </div>
       )}
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
@@ -1496,10 +1587,11 @@ type MyGiftRequest = {
 type MyGiftRequestDetail = {
   request: MyGiftRequest;
   events: { id: number; type: string; toStatus: string | null; comment: string | null; actorName: string; createdAt: string }[];
-  attachments: { id: number; assetId: number; role: string; filename: string; size: number | null; uploaderName: string | null; createdAt: string }[];
+  attachments: { id: number; assetId: number; role: string; filename: string; contentType: string | null; extension: string | null; size: number | null; uploaderName: string | null; createdAt: string }[];
 };
 
 const giftRequestStatus: Record<string, { zh: string; en: string }> = {
+  draft: { zh: '设计草稿', en: 'Design draft' },
   submitted: { zh: '待审核', en: 'Submitted' }, reviewing: { zh: '审核中', en: 'In review' }, approved: { zh: '已批准', en: 'Approved' },
   rejected: { zh: '已拒绝', en: 'Rejected' }, queued: { zh: '已排产', en: 'Scheduled' }, printing: { zh: '打印中', en: 'Printing' },
   ready: { zh: '待领取', en: 'Ready' }, completed: { zh: '已完成', en: 'Completed' }, cancelled: { zh: '已取消', en: 'Cancelled' },
@@ -1567,7 +1659,7 @@ function MyRequestsPanel({ language, refreshKey }: { language: GiftLanguage; ref
         </button>
         {expanded ? <div className="border-t border-slate-100 p-5"><div className="mb-4 flex justify-end"><button onClick={() => void loadRequests()} className="inline-flex items-center gap-2 text-xs font-black text-[#0b4f9c]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{language === 'zh' ? '刷新' : 'Refresh'}</button></div>{error ? <p className="mb-4 rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}{!loading && requests.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center text-xs font-bold text-slate-400">{language === 'zh' ? '还没有提交打印申请' : 'No print requests yet'}</div> : <div className="space-y-2">{requests.map((request) => <button key={request.id} onClick={() => void openRequest(request.id)} className="grid w-full items-center gap-3 rounded-lg border border-slate-100 p-4 text-left transition hover:border-cyan-200 hover:bg-cyan-50/30 md:grid-cols-[150px_1fr_110px_120px_24px]"><span className="font-mono text-xs font-black text-[#0b4f9c]">{request.requestNo}</span><span><strong className="block text-sm text-slate-900">{request.title}</strong><small className="text-slate-500">{request.quantity} {language === 'zh' ? '件' : 'pcs'} · {request.modelTitle || request.businessScene || request.requestType}</small></span><span className="text-xs font-black text-slate-600">{label(request.status)}</span><span className="text-xs text-slate-400">{new Date(request.createdAt).toLocaleDateString()}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>)}</div>}</div> : null}
       </div>
-      {detail ? <div className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"><div className="h-full w-full max-w-2xl overflow-y-auto bg-slate-100 p-6 shadow-2xl"><div className="flex items-start justify-between"><div><div className="font-mono text-xs font-black text-cyan-700">{detail.request.requestNo}</div><h2 className="mt-2 text-2xl font-black">{detail.request.title}</h2><p className="mt-1 text-sm font-bold text-slate-500">{label(detail.request.status)}</p></div><button onClick={() => setDetail(null)}><X /></button></div><div className="mt-5 grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-2"><RequestInfo label={language === 'zh' ? '数量与工艺' : 'Quantity & finish'} value={`${detail.request.quantity} · ${detail.request.finishType}${detail.request.paintColor ? ` ${detail.request.paintColor}` : ''}`} /><RequestInfo label={language === 'zh' ? '期望完成' : 'Requested date'} value={detail.request.requestedCompletionDate || '-'} /><RequestInfo label={language === 'zh' ? '生产批次' : 'Batch'} value={detail.request.productionBatchNo || '-'} /><RequestInfo label={language === 'zh' ? '计划完成' : 'Scheduled completion'} value={detail.request.scheduledCompleteAt ? new Date(detail.request.scheduledCompleteAt).toLocaleString() : '-'} /><RequestInfo label={language === 'zh' ? '负责人' : 'Operator'} value={detail.request.assigneeName || '-'} /><RequestInfo label={language === 'zh' ? '交付信息' : 'Delivery'} value={[detail.request.deliveryRecipient, detail.request.deliveryNotes].filter(Boolean).join(' · ') || '-'} /></div><div className="mt-5 rounded-xl bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-black">{language === 'zh' ? '申请附件' : 'Attachments'}</h3><label className="cursor-pointer rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-[#0b4f9c]"><UploadCloud className="mr-1 inline h-4 w-4" />{uploading ? '上传中…' : language === 'zh' ? '补充附件' : 'Add file'}<input disabled={uploading} type="file" className="sr-only" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div><div className="mt-3 space-y-2">{detail.attachments.map((file) => <a key={file.id} href={`/api/gift/assets/${file.assetId}?download=1`} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-xs font-bold text-slate-700"><span>{file.filename}</span><Download className="h-4 w-4 text-[#0b4f9c]" /></a>)}</div></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '处理进度' : 'Timeline'}</h3><div className="mt-4 space-y-4">{detail.events.map((event) => <div key={event.id} className="border-l-2 border-cyan-200 pl-4"><div className="text-sm font-black">{event.toStatus ? label(event.toStatus) : event.type}</div><div className="mt-1 text-xs text-slate-400">{event.actorName} · {new Date(event.createdAt).toLocaleString()}</div>{event.comment ? <p className="mt-1 text-xs text-slate-600">{event.comment}</p> : null}</div>)}</div></div>{['submitted', 'reviewing', 'approved', 'queued'].includes(detail.request.status) ? <button onClick={() => void cancelRequest()} className="mt-5 rounded-md border border-red-200 px-4 py-2 text-xs font-black text-red-700">{language === 'zh' ? '取消申请' : 'Cancel request'}</button> : null}</div></div> : null}
+      {detail ? <div className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"><div className="h-full w-full max-w-2xl overflow-y-auto bg-slate-100 p-6 shadow-2xl"><div className="flex items-start justify-between"><div><div className="font-mono text-xs font-black text-cyan-700">{detail.request.requestNo}</div><h2 className="mt-2 text-2xl font-black">{detail.request.title}</h2><p className="mt-1 text-sm font-bold text-slate-500">{label(detail.request.status)}</p></div><button onClick={() => setDetail(null)}><X /></button></div><div className="mt-5 grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-2"><RequestInfo label={language === 'zh' ? '数量与工艺' : 'Quantity & finish'} value={`${detail.request.quantity} · ${detail.request.finishType}${detail.request.paintColor ? ` ${detail.request.paintColor}` : ''}`} /><RequestInfo label={language === 'zh' ? '期望完成' : 'Requested date'} value={detail.request.requestedCompletionDate || '-'} /><RequestInfo label={language === 'zh' ? '生产批次' : 'Batch'} value={detail.request.productionBatchNo || '-'} /><RequestInfo label={language === 'zh' ? '计划完成' : 'Scheduled completion'} value={detail.request.scheduledCompleteAt ? new Date(detail.request.scheduledCompleteAt).toLocaleString() : '-'} /><RequestInfo label={language === 'zh' ? '负责人' : 'Operator'} value={detail.request.assigneeName || '-'} /><RequestInfo label={language === 'zh' ? '交付信息' : 'Delivery'} value={[detail.request.deliveryRecipient, detail.request.deliveryNotes].filter(Boolean).join(' · ') || '-'} /></div><div className="mt-5 rounded-xl bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-black">{language === 'zh' ? '草稿与申请资产' : 'Draft and request assets'}</h3><label className="cursor-pointer rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-[#0b4f9c]"><UploadCloud className="mr-1 inline h-4 w-4" />{uploading ? '上传中…' : language === 'zh' ? '补充附件' : 'Add file'}<input disabled={uploading} type="file" className="sr-only" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.attachments.map((file) => <a key={file.id} href={`/api/gift/assets/${file.assetId}?download=1`} className="overflow-hidden rounded-md border border-slate-100 bg-slate-50 text-xs font-bold text-slate-700">{file.contentType?.startsWith('image/') ? <img src={`/api/gift/assets/${file.assetId}`} alt={file.filename} className="aspect-[4/3] w-full bg-white object-contain" /> : <div className="grid aspect-[4/3] place-items-center bg-slate-100"><Layers3 className="h-10 w-10 text-slate-300" /></div>}<span className="flex items-center justify-between gap-2 p-3"><span className="truncate">{file.filename}</span><Download className="h-4 w-4 shrink-0 text-[#0b4f9c]" /></span></a>)}</div></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '处理进度' : 'Timeline'}</h3><div className="mt-4 space-y-4">{detail.events.map((event) => <div key={event.id} className="border-l-2 border-cyan-200 pl-4"><div className="text-sm font-black">{event.toStatus ? label(event.toStatus) : event.type}</div><div className="mt-1 text-xs text-slate-400">{event.actorName} · {new Date(event.createdAt).toLocaleString()}</div>{event.comment ? <p className="mt-1 text-xs text-slate-600">{event.comment}</p> : null}</div>)}</div></div>{['submitted', 'reviewing', 'approved', 'queued'].includes(detail.request.status) ? <button onClick={() => void cancelRequest()} className="mt-5 rounded-md border border-red-200 px-4 py-2 text-xs font-black text-red-700">{language === 'zh' ? '取消申请' : 'Cancel request'}</button> : null}</div></div> : null}
     </section>
   );
 }
@@ -1684,7 +1776,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
 
       <MyRequestsPanel language={language} refreshKey={requestRefreshKey} />
 
-      <section className="mx-auto max-w-[1480px] px-5 py-4">{employee.approvalStatus === 'approved' ? <AiGiftStudio language={language} onOrder={setSelectedModel} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />}</section>
+      <section className="mx-auto max-w-[1480px] px-5 py-4">{employee.approvalStatus === 'approved' ? <AiGiftStudio language={language} onOrder={setSelectedModel} onDraftUpdated={() => setRequestRefreshKey((value) => value + 1)} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />}</section>
 
       <section className="mx-auto max-w-[1480px] px-5 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
