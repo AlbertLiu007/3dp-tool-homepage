@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeGiftRequest, giftApiError } from '@/lib/gift-api';
+import { isLocalGiftDevelopmentSession } from '@/lib/gift-db';
 import { createGiftPrintRequest, listMyGiftPrintRequests } from '@/lib/gift-library-db';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,9 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   try {
     const { session } = await authorizeGiftRequest(request);
+    if (isLocalGiftDevelopmentSession(session)) {
+      return NextResponse.json({ requests: [] }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     return NextResponse.json({ requests: await listMyGiftPrintRequests(session) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftApiError(error, 'Unable to load employee print requests.');
