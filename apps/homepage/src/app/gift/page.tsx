@@ -1877,6 +1877,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
       </div></div>
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
+      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => { setSelectedRender(previewRender.index); setEditNotice(false); }} /> : null}
     </section>
   );
 
@@ -1944,6 +1945,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         </div>
       )}
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
+      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => { setSelectedRender(previewRender.index); setEditNotice(false); }} /> : null}
     </section>
   );
 }
