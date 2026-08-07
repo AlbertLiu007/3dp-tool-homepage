@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { editGiftImage, GiftAiError } from '@/lib/gift-ai';
+import { editGiftImage, GiftAiError, IMAGE_EDIT_MODEL } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         'image_edit',
         () => editGiftImage({ image, mask, prompt }),
         giftAiIdempotencyKey(request),
-        { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' },
+        { provider: 'krill-ai', model: IMAGE_EDIT_MODEL },
       );
       return NextResponse.json({
         draft: { id: Number.isInteger(draftRequestId) && draftRequestId > 0 ? draftRequestId : 1 },
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         metadata: { source: 'ai', stage, usageRequestId: requestId, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null },
       });
       return { image: output, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null };
-    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' });
+    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: IMAGE_EDIT_MODEL });
     return NextResponse.json({ draft, ...result }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftAiErrorResponse(error);

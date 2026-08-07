@@ -20,6 +20,9 @@ export type GeneratedGiftModel = {
   draftRequestId?: number;
   modelAssetId?: number;
   previewAssetId?: number;
+  previewModelAssetId?: number;
+  previewModelUrl?: string;
+  previewModelType?: 'glb' | 'gltf';
 };
 
 const modalCopy = {
@@ -112,14 +115,52 @@ async function readResponseBuffer(response: Response, onProgress: (progress: Dow
 // Keep one in-flight/completed buffer per exact model URL so the library card,
 // request thumbnail, and AI result preview can share the same model download.
 const modelBufferCache = new Map<string, Promise<ArrayBuffer>>();
+const persistentPreviewDatabase = 'unionam-gift-model-preview-v1';
+const persistentPreviewStore = 'buffers';
 
-function modelContentType(modelType: GeneratedGiftModel['modelType']) {
-  if (modelType === 'glb') return 'model/gltf-binary';
-  if (modelType === 'gltf') return 'model/gltf+json';
-  return 'model/stl';
+function openPreviewDatabase() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(persistentPreviewDatabase, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(persistentPreviewStore)) request.result.createObjectStore(persistentPreviewStore);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-function loadModelBuffer(modelUrl: string, signal: AbortSignal, onProgress: (progress: DownloadProgress) => void) {
+async function readPersistentPreview(key: string) {
+  if (typeof indexedDB === 'undefined') return null;
+  try {
+    const database = await openPreviewDatabase();
+    return await new Promise<ArrayBuffer | null>((resolve, reject) => {
+      const transaction = database.transaction(persistentPreviewStore, 'readonly');
+      const request = transaction.objectStore(persistentPreviewStore).get(key);
+      request.onsuccess = () => resolve(request.result instanceof ArrayBuffer ? request.result : null);
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => database.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentPreview(key: string, buffer: ArrayBuffer) {
+  if (typeof indexedDB === 'undefined' || buffer.byteLength > 30 * 1024 * 1024) return;
+  try {
+    const database = await openPreviewDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(persistentPreviewStore, 'readwrite');
+      transaction.objectStore(persistentPreviewStore).put(buffer, key);
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch {
+    // Browser storage may be disabled or full. HTTP loading remains available.
+  }
+}
+
+function loadModelBuffer(modelUrl: string, signal: AbortSignal, onProgress: (progress: DownloadProgress) => void, persistent = false) {
   const isStaticModel = modelUrl.startsWith('/gift-models/');
   const cachedBuffer = modelBufferCache.get(modelUrl);
   if (cachedBuffer) {
@@ -129,14 +170,25 @@ function loadModelBuffer(modelUrl: string, signal: AbortSignal, onProgress: (pro
     });
   }
 
-  const request = fetch(modelUrl, {
-    credentials: 'same-origin',
-    cache: isStaticModel ? 'force-cache' : 'no-store',
-    signal,
-  }).then(async (response) => {
+  const request = (async () => {
+    if (persistent) {
+      const stored = await readPersistentPreview(modelUrl);
+      if (stored) {
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        onProgress({ loaded: stored.byteLength, total: stored.byteLength });
+        return stored;
+      }
+    }
+    const response = await fetch(modelUrl, {
+      credentials: 'same-origin',
+      cache: isStaticModel || persistent ? 'force-cache' : 'no-store',
+      signal,
+    });
     if (!response.ok) throw new Error('Unable to load model.');
-    return readResponseBuffer(response, onProgress);
-  });
+    const buffer = await readResponseBuffer(response, onProgress);
+    if (persistent) void writePersistentPreview(modelUrl, buffer.slice(0));
+    return buffer;
+  })();
 
   modelBufferCache.set(modelUrl, request);
   request.catch(() => {
@@ -162,8 +214,6 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const [scaledDownloadUrl, setScaledDownloadUrl] = useState<string | null>(null);
   const [scaleSaving, setScaleSaving] = useState(false);
   const [scaleError, setScaleError] = useState(false);
-  const [sourceDownloadUrl, setSourceDownloadUrl] = useState<string | null>(null);
-  const sourceDownloadUrlRef = useRef<string | null>(null);
   const scaledDownloadUrlRef = useRef<string | null>(null);
 
   useEffect(() => setMounted(true), []);
@@ -182,6 +232,9 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   useEffect(() => {
     const controller = new AbortController();
     let parsedObject: THREE.Object3D | null = null;
+    const viewerModelUrl = model.previewModelUrl || model.modelUrl;
+    const viewerModelType = model.previewModelType || model.modelType;
+    const usingLightweightPreview = viewerModelUrl !== model.modelUrl;
     setStatus('loading');
     setLoadPhase('downloading');
     setDownloadProgress({ loaded: 0, total: null });
@@ -189,9 +242,6 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     setMeasurement(null);
     setObject(null);
     setSourceBuffer(null);
-    if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
-    sourceDownloadUrlRef.current = null;
-    setSourceDownloadUrl(null);
     setScalePercent(100);
     setScaleInput('100');
     setScaleInputError(false);
@@ -200,15 +250,12 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
     scaledDownloadUrlRef.current = null;
     setScaledDownloadUrl(null);
-    void loadModelBuffer(model.modelUrl, controller.signal, setDownloadProgress)
+    void loadModelBuffer(viewerModelUrl, controller.signal, setDownloadProgress, usingLightweightPreview || viewerModelUrl.startsWith('/gift-models/'))
       .then(async (buffer) => {
         setFileSize(buffer.byteLength);
-        setSourceBuffer(buffer);
-        const nextSourceDownloadUrl = URL.createObjectURL(new Blob([buffer], { type: modelContentType(model.modelType) }));
-        sourceDownloadUrlRef.current = nextSourceDownloadUrl;
-        setSourceDownloadUrl(nextSourceDownloadUrl);
+        if (!usingLightweightPreview) setSourceBuffer(buffer);
         setLoadPhase('parsing');
-        const parsed = await parseGiftModelBuffer(buffer, model.modelType);
+        const parsed = await parseGiftModelBuffer(buffer, viewerModelType);
         parsedObject = parsed.object;
         setObject(parsed.object);
         setMeasurement(measureGiftModel(parsed.object));
@@ -220,14 +267,11 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
       });
     return () => {
       controller.abort();
-      if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
-      sourceDownloadUrlRef.current = null;
       if (parsedObject) disposeObjectResources(parsedObject);
     };
   }, [model]);
 
   useEffect(() => () => {
-    if (sourceDownloadUrlRef.current) URL.revokeObjectURL(sourceDownloadUrlRef.current);
     if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
   }, []);
 
@@ -249,14 +293,25 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   }
 
   async function saveScale() {
-    if (!sourceBuffer || !object || status !== 'ready' || scaleSaving) return;
+    if (status !== 'ready' || scaleSaving) return;
     setScaleSaving(true);
     setScaleError(false);
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 30));
       let nextUrl: string | null = null;
       if (scalePercent !== 100) {
-        const blob = createScaledStlBlob({ buffer: sourceBuffer, object, format: model.modelType, scale: scalePercent / 100 });
+        let originalBuffer = sourceBuffer;
+        let originalObject = object;
+        let temporaryObject: THREE.Object3D | null = null;
+        if (!originalBuffer || !originalObject) {
+          originalBuffer = await loadModelBuffer(model.modelUrl, new AbortController().signal, () => undefined);
+          const parsed = await parseGiftModelBuffer(originalBuffer, model.modelType);
+          temporaryObject = parsed.object;
+          originalObject = parsed.object;
+        }
+        if (!originalObject) throw new Error('Original model is unavailable.');
+        const blob = createScaledStlBlob({ buffer: originalBuffer, object: originalObject, format: model.modelType, scale: scalePercent / 100 });
+        if (temporaryObject) disposeObjectResources(temporaryObject);
         nextUrl = URL.createObjectURL(blob);
       }
       if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
@@ -289,10 +344,11 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     triangleCount: measurement.triangleCount,
   } : null;
   const scalePending = scalePercent !== savedScalePercent;
-  const downloadUrl = scaledDownloadUrl || sourceDownloadUrl || model.modelUrl;
+  const downloadUrl = scaledDownloadUrl || model.modelUrl;
   const downloadReady = status === 'ready' && Boolean(downloadUrl);
   const stlFileName = (model.fileName || 'unionam-gift.stl').replace(/\.[^.]+$/, '.stl');
   const downloadName = scalePercent === 100 ? stlFileName : stlFileName.replace(/\.stl$/i, `-${scalePercent}pct.stl`);
+  const previewImageUrl = model.previewImageUrl || (model.previewAssetId ? `/api/gift/assets/${model.previewAssetId}` : null);
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/55 p-3 backdrop-blur-sm md:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -307,7 +363,7 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
         </div>
         <div className="flex min-h-0 flex-1 flex-col rounded-b-xl bg-white">
           <div className="relative min-h-0 flex-1 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)]">
-            {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : null}
+            {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : previewImageUrl ? <div className="absolute inset-0 grid place-items-center p-6"><img src={previewImageUrl} alt={labels.title} className="h-full w-full object-contain" /></div> : null}
             {status !== 'ready' ? <div className="absolute inset-0 grid place-items-center p-4"><div className={`w-full max-w-sm rounded-lg border bg-white/95 px-5 py-4 text-sm font-bold shadow-sm ${status === 'failed' ? 'border-red-200 text-red-700' : 'border-slate-200 text-slate-700'}`}>{status === 'loading' ? <><div className="flex items-center gap-2"><LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-cyan-700" /><span>{loadingLabel}{loadPhase === 'downloading' && downloadPercent !== null ? ` ${downloadPercent}%` : ''}</span></div>{loadPhase === 'downloading' ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-cyan-600 transition-[width] duration-150" style={{ width: `${downloadPercent ?? 0}%` }} /></div><div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500"><span>{downloadPercent !== null ? `${downloadPercent}%` : '--%'}</span><span>{formatFileSize(downloadProgress.loaded)} / {formatFileSize(downloadProgress.total)}</span></div></> : <div className="mt-2 text-xs text-slate-500">{formatFileSize(fileSize)}</div>}</> : labels.failed}</div></div> : null}
             <div className="absolute left-4 top-4 rounded-md border border-white/70 bg-white/90 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">{status === 'loading' ? loadingLabel : status === 'ready' ? labels.ready : labels.failed}</div>
           </div>
@@ -316,7 +372,7 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
               <div className="min-w-0 font-bold"><span className="text-slate-400">{labels.dimensions}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement ? `${formatNumber(scaledMeasurement.dimensionsMm.x, language)} × ${formatNumber(scaledMeasurement.dimensionsMm.y, language)} × ${formatNumber(scaledMeasurement.dimensionsMm.z, language)} mm` : '--'}</strong></div>
               <div className="flex shrink-0 items-center gap-2">
                 <label className={`inline-flex h-8 shrink-0 items-center rounded-md border bg-slate-50 pl-2 font-bold ${scaleInputError ? 'border-red-300 text-red-600' : 'border-slate-200 text-slate-500'}`}><span className="mr-2 whitespace-nowrap">{labels.scale}</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={scaleInput} disabled={status !== 'ready' || scaleSaving} onFocus={(event) => event.currentTarget.select()} onBlur={() => commitScaleInput()} onKeyDown={(event) => { if (event.key === 'Enter') commitScaleInput(); }} onChange={(event) => { const nextValue = event.target.value.replace(/\D/g, ''); setScaleInput(nextValue); setScaleInputError(false); if (isValidScaleInput(nextValue)) setScalePercent(Number(nextValue)); }} aria-invalid={scaleInputError} aria-label={`${labels.scale} %`} className="h-full w-20 border-l border-slate-200 bg-white px-1.5 text-right font-mono text-xs font-black text-slate-900 outline-none focus:bg-cyan-50" /><span className="px-2">%</span></label>
-                <button type="button" disabled={!sourceBuffer || !object || status !== 'ready' || scaleSaving || !scalePending || !isValidScaleInput(scaleInput)} onClick={() => void saveScale()} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[#0b4f9c] px-2.5 font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-40">{scaleSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}{scaleSaving ? labels.savingScale : labels.saveScale}</button>
+                <button type="button" disabled={status !== 'ready' || scaleSaving || !scalePending || !isValidScaleInput(scaleInput)} onClick={() => void saveScale()} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[#0b4f9c] px-2.5 font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-40">{scaleSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}{scaleSaving ? labels.savingScale : labels.saveScale}</button>
               </div>
             </div>
             {scaleInputError ? <div className="mt-1 text-right text-[10px] font-bold text-red-600">{labels.scaleInvalid}</div> : null}

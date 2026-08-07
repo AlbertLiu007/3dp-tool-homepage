@@ -41,9 +41,10 @@ export async function GET(request: Request) {
     const storedModel = await findGiftDraftGeneratedAsset(employee, draftRequestId, activeId, 'model_file');
     if (usage.status === 'succeeded' && storedModel) {
       const storedPreview = await findGiftDraftGeneratedAsset(employee, draftRequestId, activeId, 'model_preview');
+      const storedPreviewModel = await findGiftDraftGeneratedAsset(employee, draftRequestId, activeId, 'model_preview_3d');
       return NextResponse.json({
         draft: { id: draftRequestId },
-        job: { id: activeId, status: 'completed', progress: 100, models: [{ type: storedModel.extension, url: storedModel.url, assetId: storedModel.assetId, previewImageUrl: storedPreview?.url, previewAssetId: storedPreview?.assetId }] },
+        job: { id: activeId, status: 'completed', progress: 100, models: [{ type: storedModel.extension, url: storedModel.url, assetId: storedModel.assetId, previewImageUrl: storedPreview?.url, previewAssetId: storedPreview?.assetId, previewModelAssetId: storedPreviewModel?.assetId, previewModelUrl: storedPreviewModel?.url }] },
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
     let job = await queryWhiteModel(activeId);
@@ -99,7 +100,7 @@ export async function GET(request: Request) {
       };
       return NextResponse.json({
         draft: { id: draftRequestId },
-        job: { ...job, models: job.models.map((model) => ({ ...model, assetId: modelAsset.assetId, previewAssetId: previewAsset?.assetId })) },
+        job: { ...job, models: job.models.map((model) => ({ ...model, assetId: modelAsset.assetId, previewAssetId: previewAsset?.assetId, previewModelAssetId: modelAsset.previewModelAssetId, previewModelUrl: modelAsset.previewModelAssetId ? `/api/gift/assets/${modelAsset.previewModelAssetId}` : undefined })) },
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
     if (job.status === 'failed') await settleGiftAiUsage(usage.requestId, 'refunded', new Error('3D model generation failed.'));

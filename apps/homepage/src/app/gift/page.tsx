@@ -284,10 +284,13 @@ type GiftModel = {
   color: string;
   accent: string;
   modelAssetId?: number | null;
+  previewModelAssetId?: number | null;
   previewAssetId?: number | null;
   previewUrls?: string[];
   modelUrl?: string;
   modelType?: GeneratedGiftModel['modelType'];
+  previewModelUrl?: string;
+  previewModelType?: GeneratedGiftModel['previewModelType'];
   generatedModelUrl?: string;
   generatedModelAssetId?: number;
   draftRequestId?: number;
@@ -313,6 +316,8 @@ function featuredGiftModels(language: GiftLanguage): GiftModel[] {
       '/gift-models/uphill-tiger/tiger-bronze.png',
     ],
     modelUrl: `/gift-models/uphill-tiger/uphill-tiger.stl?v=${uphillTigerModelVersion}`,
+    previewModelUrl: `/gift-models/uphill-tiger/uphill-tiger-preview.glb?v=${uphillTigerModelVersion}`,
+    previewModelType: 'glb',
   }];
 }
 
@@ -1041,6 +1046,16 @@ async function apiErrorMessage(response: Response) {
   return { configuration: payload.error === 'configuration', reason: payload.error, message: payload.message } satisfies GiftAiClientError;
 }
 
+function editClientErrorMessage(error: unknown, language: GiftLanguage) {
+  const message = typeof error === 'object' && error && 'message' in error && typeof error.message === 'string'
+    ? error.message
+    : '';
+  if (message === 'fetch failed' || message.toLowerCase().includes('timed out') || message.toLowerCase().includes('timeout')) {
+    return language === 'zh' ? '图片编辑服务连接超时，本次未生成新图片，请稍后重试。' : 'The image editing service timed out. No new image was created; please try again.';
+  }
+  return message || (language === 'zh' ? '图片编辑失败，本次未生成新图片，请稍后重试。' : 'Image editing failed. No new image was created; please try again.');
+}
+
 function renderPrompt(language: GiftLanguage, brief: string, tags: string[], finish: FinishMode, paintColor: string) {
   const finishText = finish === 'paint'
     ? `single-color matte spray paint finish in exactly ${paintColor}. The entire object must use this one uniform solid paint color; no gradients, no color blocking, no accent colors, no metallic parts, and no secondary material colors. Natural lighting and shadows may change brightness only`
@@ -1096,6 +1111,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [editMask, setEditMask] = useState<File | null>(null);
   const [editing, setEditing] = useState(false);
   const [editNotice, setEditNotice] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
   const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
@@ -1177,6 +1193,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     const imageAsset = [...resumeDraft.attachments].reverse().find((file) => file.contentType?.startsWith('image/') && ['render_image', 'reference_image', 'model_preview'].includes(file.assetKind));
     const modelAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_file');
     const modelPreviewAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview');
+    const modelPreview3dAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview_3d');
     const restoredModel = modelAsset ? {
       jobId: `draft:${request.id}`,
       modelUrl: `/api/gift/assets/${modelAsset.assetId}`,
@@ -1186,6 +1203,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       modelAssetId: modelAsset.assetId,
       previewAssetId: modelPreviewAsset?.assetId,
       previewImageUrl: modelPreviewAsset ? `/api/gift/assets/${modelPreviewAsset.assetId}` : undefined,
+      previewModelAssetId: modelPreview3dAsset?.assetId,
+      previewModelUrl: modelPreview3dAsset ? `/api/gift/assets/${modelPreview3dAsset.assetId}` : undefined,
+      previewModelType: modelPreview3dAsset ? 'glb' : undefined,
     } satisfies GeneratedGiftModel : null;
 
     setFinish(request.finishType === 'bronze' ? 'bronze' : 'paint');
@@ -1407,7 +1427,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       await new Promise((resolve) => window.setTimeout(resolve, 5000));
       const queryResponse = await fetch(`/api/gift/ai/3d/query?id=${encodeURIComponent(jobId)}&draftRequestId=${draftRequestId}`, { cache: 'no-store', credentials: 'same-origin' });
       if (!queryResponse.ok) throw await apiErrorMessage(queryResponse);
-      const queryPayload = await queryResponse.json() as { job?: { id?: string; status?: string; progress?: number; models?: { type: string; url: string; assetId?: number; previewImageUrl?: string; previewAssetId?: number }[] } };
+      const queryPayload = await queryResponse.json() as { job?: { id?: string; status?: string; progress?: number; models?: { type: string; url: string; assetId?: number; previewImageUrl?: string; previewAssetId?: number; previewModelUrl?: string; previewModelAssetId?: number }[] } };
       if (queryPayload.job?.id) jobId = queryPayload.job.id;
       const providerProgress = Number(queryPayload.job?.progress);
       if (queryPayload.job?.status === 'queued') {
@@ -1432,6 +1452,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           draftRequestId,
           modelAssetId: preferred.assetId,
           previewAssetId: preferred.previewAssetId,
+          previewModelUrl: preferred.previewModelUrl,
+          previewModelAssetId: preferred.previewModelAssetId,
+          previewModelType: preferred.previewModelUrl ? 'glb' : undefined,
         } satisfies GeneratedGiftModel;
       }
       if (queryPayload.job?.status === 'failed') throw { configuration: false, message: 'Model generation failed.' };
@@ -1541,6 +1564,8 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     const source = giftImageSource(selectedImage);
     if (!source || !editPrompt.trim()) return;
     clearAiError();
+    setEditNotice(false);
+    setEditError(null);
     setEditing(true);
     try {
       const sourceFile = await imageSourceToFile(source, 'gift-render.png');
@@ -1571,6 +1596,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       setEditMask(null);
       setEditNotice(true);
     } catch (error) {
+      setEditError(editClientErrorMessage(error, language));
       setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
     } finally {
       setEditing(false);
@@ -1677,7 +1703,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
           {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => { setSelectedRender(index); setEditNotice(false); }} labels={labels} />)}</div>
 
-            {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => setEditPrompt(event.target.value)} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}</div></div> : null}
+            {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editing ? <span className="text-xs font-bold text-[#0b4f9c]">{labels.editingImage}</span> : null}{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">{editError}</span> : null}</div></div> : null}
 
             {briefStatus === 'generating-model' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : <button type="button" onClick={generateBriefModel} disabled={selectedRender === null} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_to_3d_click"><Boxes className="h-5 w-5" />{labels.generateFromRender}</button>}</div> : null}
           {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
@@ -1760,7 +1786,7 @@ type MyGiftRequest = {
   businessScene: string | null; quantity: number; finishType: string; paintColor: string | null; requestedCompletionDate: string | null;
   pickupLocation: string | null; requestNotes: string | null; status: string; assigneeName: string | null; productionBatchNo: string | null;
   scheduledCompleteAt: string | null; deliveryMethod: string | null; deliveryRecipient: string | null; deliveryNotes: string | null;
-  specifications: Record<string, unknown> | null; createdAt: string; updatedAt: string; thumbnailAssetId: number | null; thumbnailContentType: string | null; modelAssetId: number | null; modelExtension: string | null;
+  specifications: Record<string, unknown> | null; createdAt: string; updatedAt: string; thumbnailAssetId: number | null; thumbnailContentType: string | null; modelAssetId: number | null; modelExtension: string | null; previewModelAssetId: number | null;
 };
 
 type MyGiftRequestDetail = {
@@ -1921,7 +1947,7 @@ function RequestAssetThumbnail({ request, language, onPreviewModel, onPreviewIma
   const extension = ['stl', 'glb', 'gltf'].includes(request.modelExtension || '') ? request.modelExtension as GeneratedGiftModel['modelType'] : 'stl';
   const openAsset = () => {
     if (hasModel) {
-      onPreviewModel({ jobId: `request:${request.id}`, modelUrl: `/api/gift/assets/${request.modelAssetId}`, modelType: extension, fileName: `${request.requestNo}.${extension}`, modelAssetId: request.modelAssetId || undefined, previewAssetId: request.thumbnailAssetId || undefined });
+      onPreviewModel({ jobId: `request:${request.id}`, modelUrl: `/api/gift/assets/${request.modelAssetId}`, modelType: extension, fileName: `${request.requestNo}.${extension}`, modelAssetId: request.modelAssetId || undefined, previewAssetId: request.thumbnailAssetId || undefined, previewModelAssetId: request.previewModelAssetId || undefined, previewModelUrl: request.previewModelAssetId ? `/api/gift/assets/${request.previewModelAssetId}` : undefined, previewModelType: request.previewModelAssetId ? 'glb' : undefined, previewImageUrl: thumbnailUrl || undefined });
     } else if (thumbnailUrl) {
       onPreviewImage(thumbnailUrl);
     }
@@ -1980,7 +2006,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
     let active = true;
     setCatalogLoading(true); setCatalogError('');
     fetch('/api/gift/catalog', { cache: 'no-store', credentials: 'same-origin' }).then(async (response) => {
-      const result = await response.json() as { models?: { id: number; slug: string; titleZh: string; titleEn: string | null; descriptionZh: string | null; descriptionEn: string | null; category: string; categoryNameZh: string; categoryNameEn: string | null; useCase: string | null; supportedFinishes: string[]; previewAssetId: number | null; modelAssetId: number | null; modelFormat: string | null }[]; categories?: { slug: string; nameZh: string; nameEn: string | null }[]; message?: string };
+      const result = await response.json() as { models?: { id: number; slug: string; titleZh: string; titleEn: string | null; descriptionZh: string | null; descriptionEn: string | null; category: string; categoryNameZh: string; categoryNameEn: string | null; useCase: string | null; supportedFinishes: string[]; previewAssetId: number | null; previewModelAssetId: number | null; modelAssetId: number | null; modelFormat: string | null }[]; categories?: { slug: string; nameZh: string; nameEn: string | null }[]; message?: string };
       if (!response.ok) throw new Error(result.message || '礼品库加载失败');
       if (!active) return;
       const categories = result.categories || [];
@@ -1996,8 +2022,10 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
           finishLabel: paint && bronze ? (language === 'zh' ? '单色喷漆 / 铜做旧' : 'Paint / antique bronze') : bronze ? (language === 'zh' ? '铜做旧' : 'Antique bronze') : (language === 'zh' ? '单色喷漆' : 'Monochrome paint'),
           finish: paint && bronze ? 'both' : bronze ? 'bronze' : 'paint',
           color: ['from-[#083f7e] to-[#22d3ee]', 'from-[#7c3f15] to-[#d6a15f]', 'from-[#164e63] to-[#38bdf8]'][index % 3],
-          accent: model.slug.slice(0, 4).toUpperCase(), previewAssetId: model.previewAssetId, modelAssetId: model.modelAssetId,
+          accent: model.slug.slice(0, 4).toUpperCase(), previewAssetId: model.previewAssetId, previewModelAssetId: model.previewModelAssetId, modelAssetId: model.modelAssetId,
           modelUrl: model.modelAssetId ? `/api/gift/assets/${model.modelAssetId}` : undefined,
+          previewModelUrl: model.previewModelAssetId ? `/api/gift/assets/${model.previewModelAssetId}` : undefined,
+          previewModelType: model.previewModelAssetId ? 'glb' : undefined,
           modelType: ['stl', 'glb', 'gltf'].includes(model.modelFormat || '') ? model.modelFormat as GeneratedGiftModel['modelType'] : 'stl',
         };
       });
@@ -2050,7 +2078,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
           <div className="mt-5 flex flex-wrap gap-2">{categories.map((item) => <button key={item.id} type="button" onClick={() => setCategory(item.id)} className={`rounded-full border px-4 py-2 text-xs font-black transition ${category === item.id ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-cyan-300 hover:text-[#0b4f9c]'}`}>{item.label}</button>)}</div>
 
           {catalogError ? <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-sm font-bold text-red-700">{catalogError}</div> : null}
-          {catalogLoading ? <div className="mt-6 grid min-h-40 place-items-center"><LoaderCircle className="h-7 w-7 animate-spin text-[#0b4f9c]" /></div> : visibleModels.length > 0 ? <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleModels.map((model) => <ModelCard key={model.id} model={model} t={t} labels={labels} onOrder={setSelectedModel} onPreview={(selected) => selected.modelUrl && setCatalogPreviewModel({ jobId: `catalog:${selected.id}`, modelUrl: selected.modelUrl, modelType: selected.modelType || 'stl', fileName: `${selected.name}.${selected.modelType || 'stl'}`, modelAssetId: selected.modelAssetId || undefined, previewAssetId: selected.previewAssetId || undefined })} />)}</div> : <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-bold text-slate-500">{labels.noResult}</div>}
+          {catalogLoading ? <div className="mt-6 grid min-h-40 place-items-center"><LoaderCircle className="h-7 w-7 animate-spin text-[#0b4f9c]" /></div> : visibleModels.length > 0 ? <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visibleModels.map((model) => <ModelCard key={model.id} model={model} t={t} labels={labels} onOrder={setSelectedModel} onPreview={(selected) => selected.modelUrl && setCatalogPreviewModel({ jobId: `catalog:${selected.id}`, modelUrl: selected.modelUrl, modelType: selected.modelType || 'stl', fileName: `${selected.name}.${selected.modelType || 'stl'}`, modelAssetId: selected.modelAssetId || undefined, previewAssetId: selected.previewAssetId || undefined, previewImageUrl: selected.previewUrls?.[0] || (selected.previewAssetId ? `/api/gift/assets/${selected.previewAssetId}` : undefined), previewModelAssetId: selected.previewModelAssetId || undefined, previewModelUrl: selected.previewModelUrl, previewModelType: selected.previewModelType })} />)}</div> : <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center text-sm font-bold text-slate-500">{labels.noResult}</div>}
         </div>
       </section>
 

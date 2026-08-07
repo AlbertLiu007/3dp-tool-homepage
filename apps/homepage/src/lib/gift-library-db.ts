@@ -60,6 +60,7 @@ function normalizeModel(row: RowDataPacket) {
     supportedFinishes: parseJson<string[]>(row.supported_finishes, []),
     modelFormat: row.model_format ? String(row.model_format) : null,
     previewAssetId: row.preview_asset_id ? Number(row.preview_asset_id) : null,
+    previewModelAssetId: row.preview_model_asset_id ? Number(row.preview_model_asset_id) : null,
     modelAssetId: row.model_asset_id ? Number(row.model_asset_id) : null,
     dimensions: row.dimension_x_mm === null ? null : {
       x: Number(row.dimension_x_mm), y: Number(row.dimension_y_mm), z: Number(row.dimension_z_mm),
@@ -127,6 +128,7 @@ function normalizeRequest(row: RowDataPacket) {
     thumbnailContentType: row.thumbnail_content_type ? String(row.thumbnail_content_type) : null,
     modelAssetId: row.model_asset_id ? Number(row.model_asset_id) : null,
     modelExtension: row.model_extension ? String(row.model_extension) : null,
+    previewModelAssetId: row.preview_model_asset_id ? Number(row.preview_model_asset_id) : null,
   };
 }
 
@@ -164,7 +166,15 @@ const requestSelect = `
       WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.asset_kind = 'model_file'
       ORDER BY ra.created_at DESC
       LIMIT 1
-    ) AS model_extension
+    ) AS model_extension,
+    (
+      SELECT ra.asset_id
+      FROM gift_request_attachments ra
+      INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+      WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.asset_kind = 'model_preview_3d'
+      ORDER BY ra.created_at DESC
+      LIMIT 1
+    ) AS preview_model_asset_id
   FROM gift_print_requests r
   INNER JOIN gift_employees requester ON requester.id = r.requester_employee_id
   LEFT JOIN gift_employees assignee ON assignee.id = r.assigned_to_employee_id
@@ -416,7 +426,7 @@ export async function canAccessGiftAsset(employee: GiftEmployeeAccess, assetId: 
   const [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT a.id FROM gift_assets a
     WHERE a.id = ? AND a.asset_status = 'active' AND (
-      EXISTS (SELECT 1 FROM gift_models m WHERE m.publication_status = 'published' AND (m.model_asset_id = a.id OR m.preview_asset_id = a.id))
+      EXISTS (SELECT 1 FROM gift_models m WHERE m.publication_status = 'published' AND (m.model_asset_id = a.id OR m.preview_asset_id = a.id OR m.preview_model_asset_id = a.id))
       OR EXISTS (
         SELECT 1 FROM gift_request_attachments ra
         INNER JOIN gift_print_requests r ON r.id = ra.request_id

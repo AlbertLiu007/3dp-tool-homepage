@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateGiftImages, GiftAiError } from '@/lib/gift-ai';
+import { generateGiftImages, GiftAiError, IMAGE_GENERATION_MODEL } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         'render',
         () => generateGiftImages(prompt, 3),
         giftAiIdempotencyKey(request),
-        { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' },
+        { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL },
       );
       return NextResponse.json({
         draft: { id: Number.isInteger(requestedDraftId) && requestedDraftId > 0 ? requestedDraftId : 1 },
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
         filename: `gift-render-${index + 1}.png`,
         metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: requestId },
       })));
-    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: process.env.GPT_IMAGE_MODEL || 'wan2.7-image-pro' });
+    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL });
     return NextResponse.json({ draft, images }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftAiErrorResponse(error);

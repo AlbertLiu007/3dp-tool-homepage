@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -9,6 +9,7 @@ import OSS from 'ali-oss';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool, GiftAccessError, type GiftEmployeeAccess } from '@/lib/gift-db';
 import { recordGiftOpsAudit } from '@/lib/gift-ops-db';
+import { createGiftPreviewGlb } from '@/lib/model/create-preview-glb';
 
 type EcsRoleCredential = {
   AccessKeyId?: string;
@@ -116,28 +117,32 @@ async function uploadObject(file: File, objectKey: string, cacheControl: string)
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
     },
   });
-  return { client, sha256 };
+  return { client, sha256, buffer };
 }
 
 export type GiftDraftAsset = {
   assetId: number;
   requestId: number;
-  kind: 'reference_image' | 'render_image' | 'edit_mask' | 'model_file' | 'model_preview';
+  kind: 'reference_image' | 'render_image' | 'edit_mask' | 'model_file' | 'model_preview' | 'model_preview_3d';
   filename: string;
   contentType: string;
   extension: string;
   size: number;
   url: string;
+  previewModelAssetId?: number;
 };
 
 type GiftDraftAssetKind = GiftDraftAsset['kind'];
 
-const draftAssetDescriptor: Record<GiftDraftAssetKind, { attachmentRole: 'source_model' | 'reference' | 'other'; maxBytes: number }> = {
+const draftAssetDescriptor: Record<GiftDraftAssetKind, { attachmentRole: 'source_model' | 'model_preview_3d' | 'reference' | 'other'; maxBytes: number }> = {
   reference_image: { attachmentRole: 'reference', maxBytes: 15 * 1024 * 1024 },
   render_image: { attachmentRole: 'reference', maxBytes: 20 * 1024 * 1024 },
   edit_mask: { attachmentRole: 'other', maxBytes: 10 * 1024 * 1024 },
   model_file: { attachmentRole: 'source_model', maxBytes: 500 * 1024 * 1024 },
   model_preview: { attachmentRole: 'reference', maxBytes: 20 * 1024 * 1024 },
+  // The attachment table intentionally keeps the role vocabulary small; the
+  // asset kind still distinguishes this cached GLB from ordinary references.
+  model_preview_3d: { attachmentRole: 'model_preview_3d', maxBytes: 30 * 1024 * 1024 },
 };
 
 function safeAssetExtension(filename: string, contentType: string, kind: GiftDraftAssetKind) {
@@ -277,7 +282,7 @@ export async function persistGiftDraftBufferAsset(input: {
   filename: string;
   contentType: string;
   metadata?: Record<string, unknown>;
-}) {
+}): Promise<GiftDraftAsset & { previewModelAssetId?: number }> {
   const request = await ownedDraftRequest(input.actor, input.requestId);
   const descriptor = draftAssetDescriptor[input.kind];
   if (!input.buffer.byteLength || input.buffer.byteLength > descriptor.maxBytes) throw new GiftAccessError('Gift asset exceeds the storage limit.', 413, 'validation');
@@ -289,10 +294,30 @@ export async function persistGiftDraftBufferAsset(input: {
   const client = await ossClient();
   await client.put(objectKey, input.buffer, {
     mime: input.contentType,
-    headers: { 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.filename)}` },
+    headers: { 'Cache-Control': input.kind === 'model_preview_3d' ? 'private, max-age=31536000, immutable' : 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.filename)}` },
   });
   try {
-    return await registerDraftAsset({ ...input, objectKey, extension, size: input.buffer.byteLength, sha256, metadata: input.metadata || {} });
+    const asset = await registerDraftAsset({ ...input, objectKey, extension, size: input.buffer.byteLength, sha256, metadata: input.metadata || {} });
+    if (input.kind === 'model_file' && extension === 'stl') {
+      try {
+        const previewBuffer = await createGiftPreviewGlb(input.buffer, extension);
+        if (previewBuffer) {
+          const preview: GiftDraftAsset & { previewModelAssetId?: number } = await persistGiftDraftBufferAsset({
+            actor: input.actor,
+            requestId: input.requestId,
+            kind: 'model_preview_3d',
+            buffer: previewBuffer,
+            filename: input.filename.replace(/\.[^.]+$/, '-preview.glb'),
+            contentType: 'model/gltf-binary',
+            metadata: { ...(input.metadata || {}), previewOfAssetId: asset.assetId },
+          });
+          return { ...asset, previewModelAssetId: preview.assetId };
+        }
+      } catch (error) {
+        console.error('[gift] preview GLB generation failed', error);
+      }
+    }
+    return asset;
   } catch (error) {
     await client.delete(objectKey).catch(() => undefined);
     throw error;
@@ -359,7 +384,7 @@ export async function persistGiftDraftRemoteAsset(input: {
   contentType: string;
   providerJobId: string;
   metadata?: Record<string, unknown>;
-}) {
+}): Promise<GiftDraftAsset & { previewModelAssetId?: number }> {
   const existing = await findGiftDraftGeneratedAsset(input.actor, input.requestId, input.providerJobId, input.kind);
   if (existing) return existing;
   const sourceUrl = new URL(input.sourceUrl);
@@ -394,10 +419,30 @@ export async function persistGiftDraftRemoteAsset(input: {
       headers: { 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.filename)}` },
     });
     try {
-      return await registerDraftAsset({
+      const asset = await registerDraftAsset({
         actor: input.actor, requestId: input.requestId, kind: input.kind, objectKey, filename: input.filename,
         contentType, extension, size, sha256: hash.digest('hex'), metadata: { ...(input.metadata || {}), providerJobId: input.providerJobId },
       });
+      if (input.kind === 'model_file' && extension === 'stl') {
+        try {
+          const previewBuffer = await createGiftPreviewGlb(await readFile(temporaryFile), extension);
+          if (previewBuffer) {
+            const preview = await persistGiftDraftBufferAsset({
+              actor: input.actor,
+              requestId: input.requestId,
+              kind: 'model_preview_3d',
+              buffer: previewBuffer,
+              filename: input.filename.replace(/\.[^.]+$/, '-preview.glb'),
+              contentType: 'model/gltf-binary',
+              metadata: { ...(input.metadata || {}), providerJobId: input.providerJobId, previewOfAssetId: asset.assetId },
+            });
+            return { ...asset, previewModelAssetId: preview.assetId };
+          }
+        } catch (error) {
+          console.error('[gift] remote model preview generation failed', error);
+        }
+      }
+      return asset;
     } catch (error) {
       await client.delete(objectKey).catch(() => undefined);
       throw error;
@@ -405,6 +450,132 @@ export async function persistGiftDraftRemoteAsset(input: {
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+async function persistGiftOpsModelPreviewAsset(actorId: number | null, modelId: number, sourceAssetId: number, sourceFilename: string, sourceBuffer: Buffer) {
+  const previewBuffer = await createGiftPreviewGlb(sourceBuffer, 'stl');
+  if (!previewBuffer) return null;
+  const objectKey = `model-library/previews/${new Date().toISOString().slice(0, 7)}/${randomUUID()}.glb`;
+  const bucket = required('GIFT_OSS_BUCKET');
+  const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
+  const client = await ossClient();
+  await client.put(objectKey, previewBuffer, {
+    mime: 'model/gltf-binary',
+    headers: { 'Cache-Control': 'private, max-age=31536000, immutable', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(sourceFilename.replace(/\.[^.]+$/, '-preview.glb'))}` },
+  });
+  try {
+    const connection = await databasePool().getConnection();
+    try {
+      await connection.beginTransaction();
+      const [assetResult] = await connection.execute<ResultSetHeader>(`
+        INSERT INTO gift_assets (
+          owner_employee_id, asset_kind, storage_region, bucket_name, object_key, object_key_hash,
+          original_filename, content_type, file_extension, size_bytes, sha256, visibility, metadata
+        ) VALUES (?, 'model_preview_3d', ?, ?, ?, ?, ?, 'model/gltf-binary', 'glb', ?, ?, 'internal', ?)
+      `, [actorId, region, bucket, objectKey, createHash('sha256').update(objectKey).digest('hex'), sourceFilename.replace(/\.[^.]+$/, '-preview.glb').slice(0, 255), previewBuffer.byteLength, createHash('sha256').update(previewBuffer).digest('hex'), JSON.stringify({ uploadedFrom: 'ops', modelId, previewOfAssetId: sourceAssetId })]);
+      const assetId = Number(assetResult.insertId);
+      const [versionRows] = await connection.execute<RowDataPacket[]>('SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM gift_model_asset_links WHERE model_id = ? AND asset_role = \'model_preview_3d\'', [modelId]);
+      const version = Number(versionRows[0]?.next_version || 1);
+      await connection.execute<ResultSetHeader>('UPDATE gift_model_asset_links SET is_current = 0 WHERE model_id = ? AND asset_role = \'model_preview_3d\'', [modelId]);
+      await connection.execute<ResultSetHeader>('INSERT INTO gift_model_asset_links (model_id, asset_id, asset_role, version_number, is_current, uploaded_by_employee_id) VALUES (?, ?, \'model_preview_3d\', ?, 1, ?)', [modelId, assetId, version, actorId]);
+      await connection.execute<ResultSetHeader>('UPDATE gift_models SET preview_model_asset_id = ? WHERE id = ?', [assetId, modelId]);
+      await connection.commit();
+      return assetId;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    await client.delete(objectKey).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function persistGiftRequestModelPreviewAsset(input: { requestId: number; ownerId: number; sourceAssetId: number; sourceFilename: string; sourceBuffer: Buffer }) {
+  const previewBuffer = await createGiftPreviewGlb(input.sourceBuffer, 'stl');
+  if (!previewBuffer) return null;
+  const [existingRows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT a.id FROM gift_request_attachments ra
+    INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
+    WHERE ra.request_id = ? AND a.asset_kind = 'model_preview_3d'
+      AND JSON_UNQUOTE(JSON_EXTRACT(a.metadata, '$.previewOfAssetId')) = ? LIMIT 1
+  `, [input.requestId, input.sourceAssetId]);
+  if (existingRows[0]) return Number(existingRows[0].id);
+  const bucket = required('GIFT_OSS_BUCKET');
+  const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
+  const objectKey = `print-requests/previews/${new Date().toISOString().slice(0, 7)}/${randomUUID()}.glb`;
+  const client = await ossClient();
+  await client.put(objectKey, previewBuffer, {
+    mime: 'model/gltf-binary',
+    headers: { 'Cache-Control': 'private, max-age=31536000, immutable', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(input.sourceFilename.replace(/\.[^.]+$/, '-preview.glb'))}` },
+  });
+  try {
+    const connection = await databasePool().getConnection();
+    try {
+      await connection.beginTransaction();
+      const [assetResult] = await connection.execute<ResultSetHeader>(`
+        INSERT INTO gift_assets (
+          owner_employee_id, asset_kind, storage_region, bucket_name, object_key, object_key_hash,
+          original_filename, content_type, file_extension, size_bytes, sha256, visibility, metadata
+        ) VALUES (?, 'model_preview_3d', ?, ?, ?, ?, ?, 'model/gltf-binary', 'glb', ?, ?, 'private', ?)
+      `, [input.ownerId, region, bucket, objectKey, createHash('sha256').update(objectKey).digest('hex'), input.sourceFilename.replace(/\.[^.]+$/, '-preview.glb').slice(0, 255), previewBuffer.byteLength, createHash('sha256').update(previewBuffer).digest('hex'), JSON.stringify({ source: 'preview-backfill', previewOfAssetId: input.sourceAssetId })]);
+      const assetId = Number(assetResult.insertId);
+      await connection.execute<ResultSetHeader>(`
+        INSERT INTO gift_request_attachments (request_id, asset_id, attachment_role, uploaded_by_employee_id, visible_to_requester)
+        VALUES (?, ?, 'model_preview_3d', ?, 1)
+      `, [input.requestId, assetId, input.ownerId]);
+      await connection.commit();
+      return assetId;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    await client.delete(objectKey).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function backfillGiftModelPreviews(limit = 100) {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const client = await ossClient();
+  let catalogConverted = 0;
+  let requestConverted = 0;
+  const [modelRows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT m.id AS model_id, m.model_asset_id, a.owner_employee_id, a.object_key, a.original_filename, a.file_extension
+    FROM gift_models m INNER JOIN gift_assets a ON a.id = m.model_asset_id AND a.asset_status = 'active'
+    WHERE m.preview_model_asset_id IS NULL AND a.file_extension = 'stl'
+    ORDER BY m.id LIMIT ?
+  `, [safeLimit]);
+  for (const row of modelRows) {
+    const result = await client.get(String(row.object_key));
+    const buffer = Buffer.isBuffer(result.content) ? result.content : Buffer.from(result.content as Uint8Array);
+    const previewId = await persistGiftOpsModelPreviewAsset(row.owner_employee_id ? Number(row.owner_employee_id) : null, Number(row.model_id), Number(row.model_asset_id), String(row.original_filename || 'gift-model.stl'), buffer);
+    if (previewId) catalogConverted += 1;
+  }
+  const [requestRows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT r.id AS request_id, r.requester_employee_id, a.id AS source_asset_id, a.object_key, a.original_filename
+    FROM gift_print_requests r
+    INNER JOIN gift_request_attachments source_ra ON source_ra.request_id = r.id AND source_ra.attachment_role = 'source_model'
+    INNER JOIN gift_assets a ON a.id = source_ra.asset_id AND a.asset_status = 'active' AND a.file_extension = 'stl'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM gift_request_attachments preview_ra
+      INNER JOIN gift_assets preview_a ON preview_a.id = preview_ra.asset_id AND preview_a.asset_status = 'active' AND preview_a.asset_kind = 'model_preview_3d'
+      WHERE preview_ra.request_id = r.id
+    )
+    ORDER BY r.id LIMIT ?
+  `, [safeLimit]);
+  for (const row of requestRows) {
+    const result = await client.get(String(row.object_key));
+    const buffer = Buffer.isBuffer(result.content) ? result.content : Buffer.from(result.content as Uint8Array);
+    const previewId = await persistGiftRequestModelPreviewAsset({ requestId: Number(row.request_id), ownerId: Number(row.requester_employee_id), sourceAssetId: Number(row.source_asset_id), sourceFilename: String(row.original_filename || 'gift-model.stl'), sourceBuffer: buffer });
+    if (previewId) requestConverted += 1;
+  }
+  return { catalogConverted, requestConverted, scanned: modelRows.length + requestRows.length };
 }
 
 export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: number, file: File, requestedKind: string, ip?: string) {
@@ -416,7 +587,7 @@ export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: num
   const objectKey = `model-library/${descriptor.kind === 'model_preview' ? 'previews' : 'models'}/${new Date().toISOString().slice(0, 7)}/${randomUUID()}.${descriptor.extension}`;
   const bucket = required('GIFT_OSS_BUCKET');
   const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
-  const { client, sha256 } = await uploadObject(file, objectKey, descriptor.kind === 'model_preview' ? 'private, max-age=86400' : 'private, no-store');
+  const { client, sha256, buffer } = await uploadObject(file, objectKey, descriptor.kind === 'model_preview' ? 'private, max-age=86400' : 'private, no-store');
   const connection = await databasePool().getConnection();
   let uploaded: { assetId: number; kind: 'model_file' | 'model_preview'; filename: string; size: number; version: number } | null = null;
   try {
@@ -449,6 +620,13 @@ export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: num
   } finally {
     connection.release();
   }
+  if (descriptor.kind === 'model_file' && descriptor.extension === 'stl') {
+    try {
+      await persistGiftOpsModelPreviewAsset(actor.id, modelId, uploaded!.assetId, file.name, buffer);
+    } catch (error) {
+      console.error('[gift] ops model preview generation failed', error);
+    }
+  }
   await recordGiftOpsAudit({ actorId: actor.id, action: 'model_asset_uploaded', entityType: 'model', entityId: modelId, summary: `${actor.name} 上传了 ${file.name}`, payload: { assetId: uploaded!.assetId, kind: descriptor.kind, size: file.size }, requestIp: ip }).catch(() => undefined);
   return uploaded!;
 }
@@ -478,7 +656,9 @@ export async function uploadGiftRequestAttachment(actor: GiftEmployeeAccess, req
   const objectKey = `print-requests/${new Date().toISOString().slice(0, 7)}/${requestRows[0].request_no}/${randomUUID()}.${extension}`;
   const bucket = required('GIFT_OSS_BUCKET');
   const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
-  const { client, sha256 } = await uploadObject(file, objectKey, 'private, no-store');
+  const { client, sha256, buffer } = await uploadObject(file, objectKey, 'private, no-store');
+  const isSourceModel = attachmentRole === 'source_model' && ['stl', 'obj', '3mf', 'glb', 'gltf'].includes(extension);
+  const assetKind = isSourceModel ? 'model_file' : 'business_attachment';
   const connection = await databasePool().getConnection();
   let uploaded: { assetId: number; filename: string; role: string; size: number } | null = null;
   try {
@@ -487,8 +667,8 @@ export async function uploadGiftRequestAttachment(actor: GiftEmployeeAccess, req
       INSERT INTO gift_assets (
         owner_employee_id, asset_kind, storage_region, bucket_name, object_key, object_key_hash,
         original_filename, content_type, file_extension, size_bytes, sha256, visibility, metadata
-      ) VALUES (?, 'business_attachment', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private', ?)
-    `, [actor.id, region, bucket, objectKey, createHash('sha256').update(objectKey).digest('hex'), file.name.slice(0, 255), file.type || null, extension, file.size, sha256, JSON.stringify({ requestId, attachmentRole })]);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private', ?)
+    `, [actor.id, assetKind, region, bucket, objectKey, createHash('sha256').update(objectKey).digest('hex'), file.name.slice(0, 255), file.type || null, extension, file.size, sha256, JSON.stringify({ requestId, attachmentRole })]);
     await connection.execute<ResultSetHeader>(`
       INSERT INTO gift_request_attachments (request_id, asset_id, attachment_role, uploaded_by_employee_id, visible_to_requester)
       VALUES (?, ?, ?, ?, ?)
@@ -505,6 +685,13 @@ export async function uploadGiftRequestAttachment(actor: GiftEmployeeAccess, req
     throw error;
   } finally {
     connection.release();
+  }
+  if (isSourceModel && extension === 'stl') {
+    try {
+      await persistGiftRequestModelPreviewAsset({ requestId, ownerId: Number(requestRows[0].requester_employee_id), sourceAssetId: uploaded!.assetId, sourceFilename: file.name, sourceBuffer: buffer });
+    } catch (error) {
+      console.error('[gift] request model preview generation failed', error);
+    }
   }
   if (operator) await recordGiftOpsAudit({ actorId: actor.id, action: 'request_attachment_uploaded', entityType: 'print_request', entityId: requestId, summary: `${actor.name} 为申请 ${requestRows[0].request_no} 上传了 ${file.name}`, payload: { assetId: uploaded!.assetId, role: attachmentRole }, requestIp: ip }).catch(() => undefined);
   return uploaded!;
@@ -592,7 +779,8 @@ export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId
       `, [modelId, current.asset_role]);
       const replacementId = previousRows[0]?.asset_id || null;
       if (replacementId) await connection.execute<ResultSetHeader>('UPDATE gift_model_asset_links SET is_current = 1 WHERE asset_id = ?', [replacementId]);
-      await connection.execute<ResultSetHeader>(`UPDATE gift_models SET ${current.asset_role === 'model_preview' ? 'preview_asset_id' : 'model_asset_id'} = ? WHERE id = ?`, [replacementId, modelId]);
+      const pointer = current.asset_role === 'model_preview' ? 'preview_asset_id' : current.asset_role === 'model_preview_3d' ? 'preview_model_asset_id' : 'model_asset_id';
+      await connection.execute<ResultSetHeader>(`UPDATE gift_models SET ${pointer} = ? WHERE id = ?`, [replacementId, modelId]);
     }
     await connection.commit();
   } catch (error) {

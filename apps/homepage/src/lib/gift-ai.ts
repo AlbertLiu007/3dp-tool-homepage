@@ -69,6 +69,23 @@ function normalizedBaseUrl(value: string) {
 
 const TRANSIENT_UPSTREAM_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+export const IMAGE_GENERATION_MODEL = 'grok-imagine-image';
+export const IMAGE_EDIT_MODEL = 'grok-imagine-image-quality';
+export const IMAGE_FALLBACK_MODEL = 'wan2.7-image';
+export const IMAGE_DOMESTIC_BASE_URL = 'https://api.cdn-krill-ai.com/v1';
+export const IMAGE_FALLBACK_BASE_URL = 'https://api.krill-ai.net/v1';
+
+class ImageProviderUnavailableError extends GiftAiError {
+  constructor(message: string, status = 502) {
+    super(message, status, 'upstream');
+    this.name = 'ImageProviderUnavailableError';
+  }
+}
+
+function canUseImageFallback(error: unknown) {
+  return error instanceof ImageProviderUnavailableError;
+}
+
 function retryDelay(response: Response | undefined, attempt: number) {
   const retryAfter = Number(response?.headers.get('retry-after'));
   if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 5000);
@@ -90,18 +107,36 @@ async function fetchImageProvider(input: string, initFactory: () => RequestInit)
     }
     await new Promise((resolve) => setTimeout(resolve, retryDelay(response, attempt)));
   }
-  throw new GiftAiError(
+  throw new ImageProviderUnavailableError(
     lastError instanceof Error ? `Image provider connection failed: ${lastError.message}` : 'Image provider connection failed after automatic retries.',
   );
 }
 
+type ImageOperation = 'generation' | 'edit';
+
 function imageConfiguration() {
   return {
-    baseUrl: normalizedBaseUrl(requiredEnvironmentVariable('GPT_IMAGE_BASE_URL')),
+    // The old GPT_IMAGE_BASE_URL pointed to the overseas route. Keep it out of
+    // the default path so production always uses the domestic CDN route.
+    baseUrl: normalizedBaseUrl(process.env.GPT_IMAGE_DOMESTIC_BASE_URL?.trim() || IMAGE_DOMESTIC_BASE_URL),
+    fallbackBaseUrl: normalizedBaseUrl(process.env.GPT_IMAGE_FALLBACK_BASE_URL?.trim() || IMAGE_FALLBACK_BASE_URL),
     apiKey: requiredEnvironmentVariable('GPT_IMAGE_API_KEY'),
-    model: process.env.GPT_IMAGE_MODEL?.trim() || 'wan2.7-image-pro',
     size: process.env.GPT_IMAGE_SIZE?.trim() || '1024x1024',
     quality: process.env.GPT_IMAGE_QUALITY?.trim() || 'high',
+  };
+}
+
+function imageProviderBaseUrls(configuration: ReturnType<typeof imageConfiguration>) {
+  return [configuration.baseUrl, configuration.fallbackBaseUrl]
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function imageModels(operation: ImageOperation) {
+  return {
+    primary: operation === 'generation'
+      ? process.env.GPT_IMAGE_GENERATION_MODEL?.trim() || IMAGE_GENERATION_MODEL
+      : process.env.GPT_IMAGE_EDIT_MODEL?.trim() || IMAGE_EDIT_MODEL,
+    fallback: process.env.GPT_IMAGE_FALLBACK_MODEL?.trim() || IMAGE_FALLBACK_MODEL,
   };
 }
 
@@ -149,6 +184,26 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   return payload;
 }
 
+async function readImageResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  let payload: T | undefined;
+  try {
+    payload = JSON.parse(text) as T;
+  } catch {
+    // Do not fall back for a malformed successful response: this is a provider
+    // response-shape problem, not evidence that the model is unavailable.
+  }
+
+  if (!response.ok) {
+    const errorPayload = payload as (ImageApiResponse & { message?: string }) | undefined;
+    const message = errorPayload?.error?.message || errorPayload?.message || `Image provider request failed with HTTP ${response.status}.`;
+    if (TRANSIENT_UPSTREAM_STATUSES.has(response.status)) throw new ImageProviderUnavailableError(message, response.status);
+    throw new GiftAiError(message, response.status, response.status === 401 || response.status === 403 ? 'authentication' : 'upstream');
+  }
+  if (!payload) throw new GiftAiError('Image provider returned an invalid JSON response.');
+  return payload;
+}
+
 async function readTripoResponse<T>(response: Response): Promise<T> {
   const payload = await readJsonResponse<TripoEnvelope<T>>(response);
   if (payload.code !== 0) throw new GiftAiError(payload.message || `Tripo request failed with code ${payload.code ?? 'unknown'}.`);
@@ -156,11 +211,22 @@ async function readTripoResponse<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-async function normalizeImage(payload: ImageApiResponse): Promise<GeneratedGiftImage> {
+async function normalizeImage(payload: ImageApiResponse, apiKey: string): Promise<GeneratedGiftImage> {
   const image = payload.data?.[0];
   if (image?.b64_json) return { dataUrl: `data:image/png;base64,${image.b64_json}` };
   if (image?.url) {
-    const response = await fetch(image.url, { cache: 'no-store' });
+    let response: Response;
+    try {
+      response = await fetch(image.url, {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch (error) {
+      throw new ImageProviderUnavailableError(
+        error instanceof Error ? `Image result download failed: ${error.message}` : 'Image result download failed.',
+      );
+    }
     if (!response.ok) throw new GiftAiError('Image provider returned an unreadable image URL.');
     const contentType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
     if (!contentType.startsWith('image/')) throw new GiftAiError('Image provider URL did not return an image.');
@@ -173,23 +239,36 @@ async function normalizeImage(payload: ImageApiResponse): Promise<GeneratedGiftI
 
 async function requestGeneratedImage(prompt: string) {
   const configuration = imageConfiguration();
-  const response = await fetchImageProvider(`${configuration.baseUrl}/images/generations`, () => ({
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      Authorization: `Bearer ${configuration.apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      model: configuration.model,
-      prompt,
-      size: configuration.size,
-      quality: configuration.quality,
-      n: 1,
-    }),
-  }));
-  return normalizeImage(await readJsonResponse<ImageApiResponse>(response));
+  const models = imageModels('generation');
+  let lastError: unknown;
+  for (const model of [models.primary, models.fallback].filter((value, index, values) => values.indexOf(value) === index)) {
+    for (const baseUrl of imageProviderBaseUrls(configuration)) {
+      try {
+        const response = await fetchImageProvider(`${baseUrl}/images/generations`, () => ({
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            Authorization: `Bearer ${configuration.apiKey}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            prompt,
+            size: configuration.size,
+            quality: configuration.quality,
+            response_format: 'b64_json',
+            n: 1,
+          }),
+        }));
+        return await normalizeImage(await readImageResponse<ImageApiResponse>(response), configuration.apiKey);
+      } catch (error) {
+        lastError = error;
+        if (!canUseImageFallback(error)) throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GiftAiError('Image generation failed.');
 }
 
 export async function generateGiftImages(prompt: string, count = 3) {
@@ -199,25 +278,38 @@ export async function generateGiftImages(prompt: string, count = 3) {
 
 export async function editGiftImage(input: { image: File; mask?: File; prompt: string }) {
   const configuration = imageConfiguration();
-  const response = await fetchImageProvider(`${configuration.baseUrl}/images/edits`, () => {
-    const formData = new FormData();
-    formData.set('model', configuration.model);
-    formData.set('prompt', input.prompt);
-    formData.set('size', configuration.size);
-    formData.set('quality', configuration.quality);
-    formData.set('image', input.image, input.image.name || 'gift-render.png');
-    if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
-    return {
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      Authorization: `Bearer ${configuration.apiKey}`,
-      Accept: 'application/json',
-    },
-    body: formData,
-    };
-  });
-  return normalizeImage(await readJsonResponse<ImageApiResponse>(response));
+  const models = imageModels('edit');
+  let lastError: unknown;
+  for (const model of [models.primary, models.fallback].filter((value, index, values) => values.indexOf(value) === index)) {
+    for (const baseUrl of imageProviderBaseUrls(configuration)) {
+      try {
+        const response = await fetchImageProvider(`${baseUrl}/images/edits`, () => {
+          const formData = new FormData();
+          formData.set('model', model);
+          formData.set('prompt', input.prompt);
+          formData.set('size', configuration.size);
+          formData.set('quality', configuration.quality);
+          formData.set('response_format', 'b64_json');
+          formData.append('image[]', input.image, input.image.name || 'gift-render.png');
+          if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
+          return {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+              Authorization: `Bearer ${configuration.apiKey}`,
+              Accept: 'application/json',
+            },
+            body: formData,
+          };
+        });
+        return await normalizeImage(await readImageResponse<ImageApiResponse>(response), configuration.apiKey);
+      } catch (error) {
+        lastError = error;
+        if (!canUseImageFallback(error)) throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new GiftAiError('Image editing failed.');
 }
 
 type TripoJobReference = {
