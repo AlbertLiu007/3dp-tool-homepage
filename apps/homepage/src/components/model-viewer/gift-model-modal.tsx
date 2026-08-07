@@ -393,16 +393,18 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const sourcePercent = sourceProgress.total
     ? Math.min(100, Math.round((sourceProgress.loaded / sourceProgress.total) * 100))
     : null;
-  const sourceStatusText = !usingLightweightPreview
-    ? (status === 'ready' ? labels.sourceReady : loadingLabel)
-    : sourcePhase === 'ready'
+  const sourceStatusText = status !== 'ready'
+    ? `${loadingLabel}${downloadPercent !== null ? ` ${downloadPercent}%` : ''}`
+    : !usingLightweightPreview
       ? labels.sourceReady
-      : sourcePhase === 'parsing'
-        ? labels.sourceParsing
-        : sourcePhase === 'failed'
-          ? labels.sourceFailed
-          : `${labels.previewLoaded} · ${labels.sourceLoading}${sourcePercent !== null ? ` ${sourcePercent}%` : ''}`;
-  const sourceStatusActive = usingLightweightPreview && sourcePhase !== 'ready' && sourcePhase !== 'failed';
+      : sourcePhase === 'ready'
+        ? labels.sourceReady
+        : sourcePhase === 'parsing'
+          ? labels.sourceParsing
+          : sourcePhase === 'failed'
+            ? labels.sourceFailed
+            : `${labels.previewLoaded} · ${labels.sourceLoading}${sourcePercent !== null ? ` ${sourcePercent}%` : ''}`;
+  const sourceStatusActive = status !== 'ready' || (usingLightweightPreview && sourcePhase !== 'ready' && sourcePhase !== 'failed');
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/55 p-3 backdrop-blur-sm md:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
