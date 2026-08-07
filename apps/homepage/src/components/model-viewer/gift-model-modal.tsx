@@ -27,13 +27,13 @@ export type GeneratedGiftModel = {
 
 const modalCopy = {
   zh: {
-    title: '白膜 3D 模型预览', downloading: '正在加载模型', parsing: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。',
+    title: '白膜 3D 模型预览', downloading: '正在加载模型', parsing: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。', previewLoaded: '预览模型已加载', sourceLoading: '源模型', sourceParsing: '正在解析源模型', sourceReady: '高质量模型已加载', sourceFailed: '预览模型已加载',
     close: '关闭', download: '下载 STL 模型', fileName: '文件名', fileSize: '文件大小', dimensions: '长 × 宽 × 高', volume: '体积', surfaceArea: '表面积', triangles: '三角面片',
     scale: '等比缩放', saveScale: '保存缩放', savingScale: '保存中…', scaleFailed: '缩放保存失败，请重试。', saveBeforeDownload: '请先保存当前缩放比例', scaleInvalid: '请输入 10–99999 的整数',
     lightFixed: '固定侧光', lightFollow: '跟随视角光', lightFixedShort: '固定光', lightFollowShort: '跟随光', showGrid: '显示网格', hideGrid: '隐藏网格', gridOn: '网格开', gridOff: '网格关', rotatePan: '旋转/平移', rotate: '旋转', pan: '平移', resetView: '重置视角',
   },
   en: {
-    title: 'White 3D model preview', downloading: 'Loading model', parsing: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.',
+    title: 'White 3D model preview', downloading: 'Loading model', parsing: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.', previewLoaded: 'Preview loaded', sourceLoading: 'Source model', sourceParsing: 'Parsing source model', sourceReady: 'High-quality model loaded', sourceFailed: 'Preview loaded',
     close: 'Close', download: 'Download STL model', fileName: 'File Name', fileSize: 'File Size', dimensions: 'L × W × H', volume: 'Volume', surfaceArea: 'Surface Area', triangles: 'Triangles',
     scale: 'Uniform scale', saveScale: 'Save scale', savingScale: 'Saving…', scaleFailed: 'Unable to save the scaled STL. Please retry.', saveBeforeDownload: 'Save the current scale before downloading', scaleInvalid: 'Enter an integer from 10 to 99999',
     lightFixed: 'Fixed side light', lightFollow: 'Camera-following light', lightFixedShort: 'Fixed', lightFollowShort: 'Follow', showGrid: 'Show Grid', hideGrid: 'Hide Grid', gridOn: 'Grid On', gridOff: 'Grid Off', rotatePan: 'Rotate/Pan', rotate: 'Rotate', pan: 'Pan', resetView: 'Reset View',
@@ -206,6 +206,8 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [loadPhase, setLoadPhase] = useState<'downloading' | 'parsing'>('downloading');
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>({ loaded: 0, total: null });
+  const [sourcePhase, setSourcePhase] = useState<'idle' | 'downloading' | 'parsing' | 'ready' | 'failed'>('idle');
+  const [sourceProgress, setSourceProgress] = useState<DownloadProgress>({ loaded: 0, total: null });
   const [sourceBuffer, setSourceBuffer] = useState<ArrayBuffer | null>(null);
   const [scalePercent, setScalePercent] = useState(100);
   const [scaleInput, setScaleInput] = useState('100');
@@ -231,13 +233,15 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
 
   useEffect(() => {
     const controller = new AbortController();
-    let parsedObject: THREE.Object3D | null = null;
+    const activeObjects: THREE.Object3D[] = [];
     const viewerModelUrl = model.previewModelUrl || model.modelUrl;
     const viewerModelType = model.previewModelType || model.modelType;
     const usingLightweightPreview = viewerModelUrl !== model.modelUrl;
     setStatus('loading');
     setLoadPhase('downloading');
     setDownloadProgress({ loaded: 0, total: null });
+    setSourcePhase('idle');
+    setSourceProgress({ loaded: 0, total: null });
     setFileSize(null);
     setMeasurement(null);
     setObject(null);
@@ -256,10 +260,45 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
         if (!usingLightweightPreview) setSourceBuffer(buffer);
         setLoadPhase('parsing');
         const parsed = await parseGiftModelBuffer(buffer, viewerModelType);
-        parsedObject = parsed.object;
+        if (controller.signal.aborted) {
+          disposeObjectResources(parsed.object);
+          return;
+        }
+        activeObjects.push(parsed.object);
         setObject(parsed.object);
         setMeasurement(measureGiftModel(parsed.object));
         setStatus('ready');
+
+        // Render the lightweight preview first, then load and replace it with
+        // the original high-quality source model in the background.
+        if (usingLightweightPreview) {
+          setSourcePhase('downloading');
+          setSourceProgress({ loaded: 0, total: null });
+          void loadModelBuffer(model.modelUrl, controller.signal, setSourceProgress)
+            .then(async (sourceBufferValue) => {
+              if (controller.signal.aborted) return;
+              setSourcePhase('parsing');
+              const sourceParsed = await parseGiftModelBuffer(sourceBufferValue, model.modelType);
+              if (controller.signal.aborted) {
+                disposeObjectResources(sourceParsed.object);
+                return;
+              }
+              const previousObject = activeObjects.pop();
+              if (previousObject) disposeObjectResources(previousObject);
+              activeObjects.push(sourceParsed.object);
+              setSourceBuffer(sourceBufferValue);
+              setFileSize(sourceBufferValue.byteLength);
+              setObject(sourceParsed.object);
+              setMeasurement(measureGiftModel(sourceParsed.object));
+              setSourcePhase('ready');
+            })
+            .catch((sourceError) => {
+              if (sourceError instanceof DOMException && sourceError.name === 'AbortError') return;
+              setSourcePhase('failed');
+            });
+        } else {
+          setSourcePhase('ready');
+        }
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -267,7 +306,8 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
       });
     return () => {
       controller.abort();
-      if (parsedObject) disposeObjectResources(parsedObject);
+      for (const activeObject of activeObjects) disposeObjectResources(activeObject);
+      activeObjects.length = 0;
     };
   }, [model]);
 
@@ -349,6 +389,20 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const stlFileName = (model.fileName || 'unionam-gift.stl').replace(/\.[^.]+$/, '.stl');
   const downloadName = scalePercent === 100 ? stlFileName : stlFileName.replace(/\.stl$/i, `-${scalePercent}pct.stl`);
   const previewImageUrl = model.previewImageUrl || (model.previewAssetId ? `/api/gift/assets/${model.previewAssetId}` : null);
+  const usingLightweightPreview = Boolean(model.previewModelUrl && model.previewModelUrl !== model.modelUrl);
+  const sourcePercent = sourceProgress.total
+    ? Math.min(100, Math.round((sourceProgress.loaded / sourceProgress.total) * 100))
+    : null;
+  const sourceStatusText = !usingLightweightPreview
+    ? (status === 'ready' ? labels.sourceReady : loadingLabel)
+    : sourcePhase === 'ready'
+      ? labels.sourceReady
+      : sourcePhase === 'parsing'
+        ? labels.sourceParsing
+        : sourcePhase === 'failed'
+          ? labels.sourceFailed
+          : `${labels.previewLoaded} · ${labels.sourceLoading}${sourcePercent !== null ? ` ${sourcePercent}%` : ''}`;
+  const sourceStatusActive = usingLightweightPreview && sourcePhase !== 'ready' && sourcePhase !== 'failed';
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/55 p-3 backdrop-blur-sm md:p-5" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -358,14 +412,19 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
             <strong className="truncate text-sm font-black text-slate-950">{stlFileName}</strong>
             <span className="shrink-0 text-[11px] font-bold text-slate-400">{labels.fileSize}：{formatFileSize(displayedFileSize)}</span>
           </div>
-          <a href={downloadReady && !scalePending ? downloadUrl : undefined} onClick={(event) => { if (!downloadReady || scalePending) event.preventDefault(); }} download={downloadName} title={scalePending ? labels.saveBeforeDownload : labels.download} aria-disabled={!downloadReady || scalePending} className={`ml-auto inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-black text-white transition ${!downloadReady || scalePending ? 'cursor-not-allowed bg-slate-300' : 'bg-[#0b4f9c] hover:bg-[#083f7e]'}`}><Download className="h-3.5 w-3.5" />{labels.download}</a>
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <div className={`hidden min-w-0 items-center gap-1.5 text-[10px] font-medium sm:flex ${sourceStatusActive ? 'text-slate-400' : 'text-slate-300'}`} aria-live="polite" title={sourceStatusText}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sourceStatusActive ? 'animate-pulse bg-slate-300' : sourcePhase === 'failed' ? 'bg-slate-300' : 'bg-emerald-300'}`} />
+              <span className="max-w-52 truncate">{sourceStatusText}</span>
+            </div>
+            <a href={downloadReady && !scalePending ? downloadUrl : undefined} onClick={(event) => { if (!downloadReady || scalePending) event.preventDefault(); }} download={downloadName} title={scalePending ? labels.saveBeforeDownload : labels.download} aria-disabled={!downloadReady || scalePending} className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-black text-white transition ${!downloadReady || scalePending ? 'cursor-not-allowed bg-slate-300' : 'bg-[#0b4f9c] hover:bg-[#083f7e]'}`}><Download className="h-3.5 w-3.5" />{labels.download}</a>
+          </div>
           <button type="button" onClick={onClose} title={labels.close} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"><X className="h-5 w-5" /></button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col rounded-b-xl bg-white">
           <div className="relative min-h-0 flex-1 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)]">
             {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : previewImageUrl ? <div className="absolute inset-0 grid place-items-center p-6"><img src={previewImageUrl} alt={labels.title} className="h-full w-full object-contain" /></div> : null}
             {status !== 'ready' ? <div className="absolute inset-0 grid place-items-center p-4"><div className={`w-full max-w-sm rounded-lg border bg-white/95 px-5 py-4 text-sm font-bold shadow-sm ${status === 'failed' ? 'border-red-200 text-red-700' : 'border-slate-200 text-slate-700'}`}>{status === 'loading' ? <><div className="flex items-center gap-2"><LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-cyan-700" /><span>{loadingLabel}{loadPhase === 'downloading' && downloadPercent !== null ? ` ${downloadPercent}%` : ''}</span></div>{loadPhase === 'downloading' ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-cyan-600 transition-[width] duration-150" style={{ width: `${downloadPercent ?? 0}%` }} /></div><div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500"><span>{downloadPercent !== null ? `${downloadPercent}%` : '--%'}</span><span>{formatFileSize(downloadProgress.loaded)} / {formatFileSize(downloadProgress.total)}</span></div></> : <div className="mt-2 text-xs text-slate-500">{formatFileSize(fileSize)}</div>}</> : labels.failed}</div></div> : null}
-            <div className="absolute left-4 top-4 rounded-md border border-white/70 bg-white/90 px-3 py-2 text-xs font-bold text-slate-700 shadow-sm">{status === 'loading' ? loadingLabel : status === 'ready' ? labels.ready : labels.failed}</div>
           </div>
           <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 text-[11px] text-slate-600">
             <div className="flex min-w-0 items-center justify-between gap-2">
