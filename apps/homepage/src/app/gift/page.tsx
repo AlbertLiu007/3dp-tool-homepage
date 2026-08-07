@@ -30,6 +30,7 @@ import {
   Pencil,
   QrCode,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -37,6 +38,8 @@ import {
   Trash2,
   UploadCloud,
   WandSparkles,
+  ZoomIn,
+  ZoomOut,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -1016,29 +1019,29 @@ function ModelGenerationProgressBar({ progress }: { progress: ModelGenerationPro
   </div>;
 }
 
-function RenderConcept({ finish, index, source, selected, onSelect, labels }: { finish: FinishMode; index: number; source?: string; selected: boolean; onSelect: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
+function RenderConcept({ language = 'zh', finish, index, source, selected, onSelect, onPreview, labels }: { language?: GiftLanguage; finish: FinishMode; index: number; source?: string; selected: boolean; onSelect: () => void; onPreview?: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
   const bronze = finish === 'bronze';
   return (
-    <button type="button" onClick={onSelect} className={`overflow-hidden rounded-xl border bg-white p-3 text-left transition ${selected ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-slate-200 hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md'}`} data-umami-event="gift_ai_render_select_click">
-      <div className={`relative grid aspect-[4/3] place-items-center overflow-hidden rounded-lg ${source ? 'bg-slate-50' : bronze ? 'bg-[radial-gradient(circle_at_40%_25%,#f4d29e_0%,#9a5a27_46%,#3f2519_100%)]' : 'bg-[radial-gradient(circle_at_40%_25%,#dff8ff_0%,#3f9fd1_48%,#073763_100%)]'}`}>
+    <div className={`w-full overflow-hidden rounded-xl border bg-white p-3 text-left transition ${selected ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-slate-200 hover:border-cyan-300 hover:shadow-md'}`}>
+      <button type="button" onClick={onPreview} className="group block w-full text-left" aria-label={language === 'zh' ? '查看大图' : 'View large image'}>
+      <div className={`relative grid aspect-[4/3] min-h-[210px] place-items-center overflow-hidden rounded-lg ${source ? 'bg-slate-50' : bronze ? 'bg-[radial-gradient(circle_at_40%_25%,#f4d29e_0%,#9a5a27_46%,#3f2519_100%)]' : 'bg-[radial-gradient(circle_at_40%_25%,#dff8ff_0%,#3f9fd1_48%,#073763_100%)]'}`}>
         {source ? <img src={source} alt={`${labels.selectConcept} ${index + 1}`} className="absolute inset-0 h-full w-full object-contain" /> : null}
         {!source ? <><div className="absolute -right-8 -top-8 h-24 w-24 rounded-full border-[12px] border-white/10" /><div className="absolute bottom-5 h-5 w-28 rounded-full bg-slate-950/25 blur-md" /></> : null}
         {!source ? <div className={`relative grid place-items-center border shadow-2xl ${index === 0 ? 'h-24 w-28 rounded-[44%_56%_38%_62%]' : index === 1 ? 'h-28 w-24 rounded-[58%_42%_52%_48%]' : 'h-24 w-32 rounded-[35%_65%_54%_46%]'} ${bronze ? 'border-amber-200/50 bg-gradient-to-br from-[#e2b978] via-[#9a5a27] to-[#54331f] text-amber-100' : 'border-white/40 bg-gradient-to-br from-white via-[#3bc2e8] to-[#0b4f9c] text-white'}`}>
           {index === 0 ? <Sparkles className="h-10 w-10" /> : index === 1 ? <Building2 className="h-10 w-10" /> : <Boxes className="h-10 w-10" />}
         </div> : null}
         <span className="absolute left-3 top-3 rounded bg-slate-950/25 px-2 py-1 text-[10px] font-black text-white backdrop-blur">0{index + 1}</span>
+        {source ? <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-950/70 px-3 py-1.5 text-[11px] font-black text-white opacity-0 backdrop-blur transition group-hover:opacity-100">{language === 'zh' ? '查看大图' : 'View large image'}</span> : null}
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="text-xs font-black text-slate-800">{selected ? labels.selected : labels.selectConcept}</span>
-        <span className={`grid h-5 w-5 place-items-center rounded-full border ${selected ? 'border-[#0b4f9c] bg-[#0b4f9c] text-white' : 'border-slate-300 text-transparent'}`}><Check className="h-3.5 w-3.5" /></span>
-      </div>
-    </button>
+      </button>
+      <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs font-bold text-slate-500">{language === 'zh' ? '方案 ' : 'Concept '}{index + 1}</span><button type="button" onClick={onSelect} className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-black transition ${selected ? 'bg-[#0b4f9c] text-white' : 'border border-[#0b4f9c] bg-white text-[#0b4f9c] hover:bg-cyan-50'}`} data-umami-event="gift_ai_render_select_click">{selected ? <Check className="h-3.5 w-3.5" /> : null}{selected ? labels.selected : labels.selectConcept}</button></div>
+    </div>
   );
 }
 
-function RenderProgressCard({ slot, index, liveElapsedMs, finish, selected, onSelect, labels }: { slot: RenderSlot; index: number; liveElapsedMs: number; finish: FinishMode; selected: boolean; onSelect: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
+function RenderProgressCard({ language, slot, index, liveElapsedMs, finish, selected, onSelect, onPreview, labels }: { language: GiftLanguage; slot: RenderSlot; index: number; liveElapsedMs: number; finish: FinishMode; selected: boolean; onSelect: () => void; onPreview: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
   if (slot.status === 'ready' && slot.image) {
-    return <div><RenderConcept finish={finish} index={index} source={giftImageSource(slot.image)} selected={selected} onSelect={onSelect} labels={labels} /><div className="mt-2 flex items-center gap-1.5 px-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{labels.renderProgressReady.replace('{seconds}', Math.max(1, Math.round(slot.elapsedMs / 1000)).toString())}</div></div>;
+    return <div><RenderConcept language={language} finish={finish} index={index} source={giftImageSource(slot.image)} selected={selected} onSelect={onSelect} onPreview={onPreview} labels={labels} /><div className="mt-2 flex items-center gap-1.5 px-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{labels.renderProgressReady.replace('{seconds}', Math.max(1, Math.round(slot.elapsedMs / 1000)).toString())}</div></div>;
   }
   const percent = slot.status === 'error' ? 0 : Math.min(94, Math.max(slot.percent, Math.round(liveElapsedMs / 320) - index * 7));
   return <div className={`overflow-hidden rounded-xl border p-3 ${slot.status === 'error' ? 'border-red-200 bg-red-50' : 'border-blue-100 bg-white'}`} role="status" aria-live="polite">
@@ -1223,6 +1226,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [editError, setEditError] = useState<string | null>(null);
   const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
   const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
+  const [previewRender, setPreviewRender] = useState<{ url: string; index: number } | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
   const [pendingResumeModel, setPendingResumeModel] = useState(false);
   const notifiedDraftIdsRef = useRef(new Set<number>());
@@ -1850,7 +1854,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div>
         </div>
 
-        {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); setEditNotice(false); }} labels={labels} />)}</div>
+        {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} language={language} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); setEditNotice(false); }} onPreview={() => slot.image && setPreviewRender({ url: giftImageSource(slot.image), index })} labels={labels} />)}</div>
 
           {selectedRender !== null && renderImages[selectedRender] ? <div className="mt-6 rounded-xl border border-blue-100 bg-white p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{editError}</span> : null}</div></div> : null}
 
@@ -2173,6 +2177,28 @@ function RequestAssetThumbnail({ request, language, onPreviewModel, onPreviewIma
 
 function GiftImagePreviewModal({ url, language, onClose }: { url: string; language: GiftLanguage; onClose: () => void }) {
   return <div className="fixed inset-0 z-[110] grid place-items-center bg-slate-950/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-label={language === 'zh' ? '图片预览' : 'Image preview'} className="relative max-h-[90vh] max-w-[92vw] overflow-hidden rounded-xl bg-white p-3 shadow-2xl"><button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm hover:bg-white" title={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button><img src={url} alt={language === 'zh' ? '申请图片预览' : 'Request image preview'} className="max-h-[84vh] max-w-[88vw] rounded-lg object-contain" /></div></div>;
+}
+
+function GiftRenderPreviewModal({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  function setZoomAndCenter(value: number) {
+    setZoom(Math.min(4, Math.max(0.75, value)));
+    if (value <= 1) setOffset({ x: 0, y: 0 });
+  }
+  return <div className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/80 p-3 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div role="dialog" aria-modal="true" aria-label={language === 'zh' ? `礼品方案 ${index + 1} 大图` : `Gift concept ${index + 1} preview`} className="flex h-[min(860px,94vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white"><div><div className="text-sm font-black">{language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`}</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">{language === 'zh' ? '滚轮缩放，拖动查看细节' : 'Scroll to zoom and drag to inspect details'}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setZoomAndCenter(zoom - 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut className="h-4 w-4" /></button><span className="w-12 text-center font-mono text-xs font-bold text-slate-300">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoomAndCenter(zoom + 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => setZoomAndCenter(1)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '重置缩放' : 'Reset zoom'}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={onClose} className="ml-2 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button></div></div>
+      <div className={`relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_35%,#334155_0%,#0f172a_70%)] ${zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`} onWheel={(event) => { event.preventDefault(); setZoomAndCenter(zoom + (event.deltaY < 0 ? 0.15 : -0.15)); }} onPointerDown={(event) => { if (zoom <= 1) return; event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y }; }} onPointerMove={(event) => { if (!dragRef.current) return; setOffset({ x: dragRef.current.offsetX + event.clientX - dragRef.current.x, y: dragRef.current.offsetY + event.clientY - dragRef.current.y }); }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}><img src={url} alt={language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`} draggable={false} className="absolute left-1/2 top-1/2 max-h-[78vh] max-w-[90%] select-none object-contain" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${zoom})` }} /></div>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-3"><span className="text-xs font-bold text-slate-400">{language === 'zh' ? '确认后可继续编辑方案' : 'You can continue editing after selecting'}</span><button type="button" onClick={() => { onSelect(); onClose(); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b77b7] px-5 text-xs font-black text-white transition hover:bg-[#08679d]"><Check className="h-4 w-4" />{language === 'zh' ? '选择此方案' : 'Choose this concept'}</button></div>
+    </div>
+  </div>;
 }
 
 function AiAccessNotice({ employee, t, onUpdated }: { employee: GiftEmployee; t: GiftCopy; onUpdated: (employee: GiftEmployee) => void }) {
