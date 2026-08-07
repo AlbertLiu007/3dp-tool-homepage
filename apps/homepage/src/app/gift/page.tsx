@@ -393,7 +393,25 @@ const studioCopy = {
     customerBriefPlaceholder: '例如：为新能源汽车客户的十周年合作纪念设计桌面摆件，体现速度、绿色能源与双方长期合作，避免复杂悬空结构。',
     profileTags: '客户画像定位（下拉多选）',
     profileAutoHint: '选择后会自动生成礼品创意文案，也可继续手动修改。',
-    renderFinish: '选择效果图工艺',
+    surfaceEffect: '礼品表面效果',
+    surfaceEffectHint: '选择成品表面表现，生成的模型仍保留可打印的白膜结构。',
+    surfaceBronze: '铜做旧',
+    surfaceBronzeHint: '纪念感、文化感与高端桌面摆件',
+    surfaceTransparent: '透明件',
+    surfaceTransparentHint: '通透、轻盈，适合科技与未来感礼品',
+    surfaceSilver: '金属银',
+    surfaceSilverHint: '精密、现代，突出金属质感',
+    surfaceRed: '亮红色',
+    surfaceRedHint: '醒目、热烈，适合活动与品牌礼赠',
+    surfaceBrown: '亮棕色',
+    surfaceBrownHint: '温暖、沉稳，适合商务纪念',
+    surfaceBlack: '亮黑色',
+    surfaceBlackHint: '克制、专业，适合高端客户',
+    surfaceGlass: '琉璃灰原色',
+    surfaceGlassHint: '保留灰色原材质，呈现琉璃般光泽',
+    surfaceCustom: '自定义颜色',
+    surfaceCustomHint: '输入 HEX 颜色，生成单色表面效果',
+    renderFinish: '礼品表面效果',
     paint: '单色喷漆',
     paintHint: '适合品牌色、现代感和科技类礼品',
     paintColor: '选择喷漆颜色',
@@ -405,8 +423,13 @@ const studioCopy = {
     processRule: '工艺选择只影响渲染效果与后处理要求，交付给打印环节的 3D 模型始终为白膜。',
     generateRender: '生成礼品渲染图',
     generatingRender: '正在生成礼品创意…',
-    renderReady: '选择一个满意的礼品方案',
-    renderReadyHint: '确认造型与工艺效果后，再生成对应的白膜 3D 模型。',
+    renderReady: '礼品方案',
+    renderReadyHint: '图片生成后会立即展示，其他方案继续生成；选择满意的方案后再生成白膜 3D 模型。',
+    renderProgressTitle: '正在生成礼品方案',
+    renderProgressPreparing: '正在准备创意提示词…',
+    renderProgressGenerating: '正在生成第 {index} 张效果图…',
+    renderProgressReady: '已生成 · 耗时 {seconds}s',
+    renderProgressPercent: '完成度',
     selectConcept: '选择此方案',
     selected: '已选择',
     editTitle: '继续编辑已生成图片',
@@ -487,7 +510,25 @@ const studioCopy = {
     customerBriefPlaceholder: 'Example: a desk sculpture for an EV customer’s 10-year partnership, expressing speed, green energy, and long-term collaboration without fragile overhangs.',
     profileTags: 'Customer profile (multi-select)',
     profileAutoHint: 'Selections automatically create the gift brief, which remains fully editable.',
-    renderFinish: 'Choose preview finish',
+    surfaceEffect: 'Gift surface effect',
+    surfaceEffectHint: 'Choose the finished surface look. The generated model remains a printable white base.',
+    surfaceBronze: 'Antique bronze',
+    surfaceBronzeHint: 'Commemorative, cultural, and premium desk pieces',
+    surfaceTransparent: 'Transparent',
+    surfaceTransparentHint: 'Light, clear, and futuristic for technology gifts',
+    surfaceSilver: 'Metallic silver',
+    surfaceSilverHint: 'Precise, modern, and visibly metallic',
+    surfaceRed: 'Bright red',
+    surfaceRedHint: 'Bold and energetic for events and brand gifts',
+    surfaceBrown: 'Bright brown',
+    surfaceBrownHint: 'Warm and steady for business keepsakes',
+    surfaceBlack: 'Glossy black',
+    surfaceBlackHint: 'Restrained and professional for premium customers',
+    surfaceGlass: 'Glass gray original',
+    surfaceGlassHint: 'Keep the gray material with a glass-like sheen',
+    surfaceCustom: 'Custom color',
+    surfaceCustomHint: 'Enter a HEX color for a single-color surface',
+    renderFinish: 'Gift surface effect',
     paint: 'Monochrome paint',
     paintHint: 'For brand colors, modern styling, and technology gifts',
     paintColor: 'Choose paint color',
@@ -499,8 +540,13 @@ const studioCopy = {
     processRule: 'Finish selection affects the render and post-processing brief only. The production 3D model always remains a white base.',
     generateRender: 'Generate gift renders',
     generatingRender: 'Generating gift concepts…',
-    renderReady: 'Choose your preferred gift concept',
-    renderReadyHint: 'Approve the form and finish before generating its white 3D model.',
+    renderReady: 'Gift concepts',
+    renderReadyHint: 'Each image appears as soon as it is ready while the other concepts continue generating. Select one before creating the white 3D model.',
+    renderProgressTitle: 'Generating gift concepts',
+    renderProgressPreparing: 'Preparing the creative prompt…',
+    renderProgressGenerating: 'Generating concept {index}…',
+    renderProgressReady: 'Ready · {seconds}s',
+    renderProgressPercent: 'Progress',
     selectConcept: 'Choose concept',
     selected: 'Selected',
     editTitle: 'Continue editing the generated image',
@@ -808,10 +854,12 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
 
 type AiCreationMode = 'image' | 'brief';
 type FinishMode = 'paint' | 'bronze';
+type SurfaceEffectId = 'bronze' | 'transparent' | 'silver' | 'red' | 'brown' | 'black' | 'glass' | 'custom';
 type ImageModelStatus = 'idle' | 'generating' | 'ready';
 type ImageInputView = 'original' | 'prepared' | 'paint';
 type BriefStatus = 'idle' | 'generating-render' | 'render-ready' | 'generating-model' | 'model-ready';
 type ModelGenerationProgress = { percent: number; stage: string };
+type RenderSlot = { status: 'loading' | 'ready' | 'error'; image?: GiftImageResult; percent: number; elapsedMs: number; error?: string };
 
 const paintColorPresets = [
   { hex: '#0B77B7', zh: '联泰蓝', en: 'UnionTech blue' },
@@ -823,6 +871,17 @@ const paintColorPresets = [
   { hex: '#E7E5E4', zh: '象牙白', en: 'Ivory' },
   { hex: '#334155', zh: '碳灰色', en: 'Charcoal' },
 ] as const;
+
+const surfaceEffectPresets: { id: SurfaceEffectId; hex: string; label: keyof typeof studioCopy.zh; hint: keyof typeof studioCopy.zh }[] = [
+  { id: 'bronze', hex: '#9A5A27', label: 'surfaceBronze', hint: 'surfaceBronzeHint' },
+  { id: 'transparent', hex: '#BFEAF5', label: 'surfaceTransparent', hint: 'surfaceTransparentHint' },
+  { id: 'silver', hex: '#B9C1CC', label: 'surfaceSilver', hint: 'surfaceSilverHint' },
+  { id: 'red', hex: '#E3262E', label: 'surfaceRed', hint: 'surfaceRedHint' },
+  { id: 'brown', hex: '#9A5A3A', label: 'surfaceBrown', hint: 'surfaceBrownHint' },
+  { id: 'black', hex: '#151922', label: 'surfaceBlack', hint: 'surfaceBlackHint' },
+  { id: 'glass', hex: '#7B8794', label: 'surfaceGlass', hint: 'surfaceGlassHint' },
+  { id: 'custom', hex: '#0B77B7', label: 'surfaceCustom', hint: 'surfaceCustomHint' },
+];
 
 type ProfileGroupId = 'industry' | 'tone' | 'occasion' | 'recipient' | 'constraint';
 type ProfileSelections = Record<ProfileGroupId, string[]>;
@@ -977,6 +1036,22 @@ function RenderConcept({ finish, index, source, selected, onSelect, labels }: { 
   );
 }
 
+function RenderProgressCard({ slot, index, liveElapsedMs, finish, selected, onSelect, labels }: { slot: RenderSlot; index: number; liveElapsedMs: number; finish: FinishMode; selected: boolean; onSelect: () => void; labels: (typeof studioCopy)[GiftLanguage] }) {
+  if (slot.status === 'ready' && slot.image) {
+    return <div><RenderConcept finish={finish} index={index} source={giftImageSource(slot.image)} selected={selected} onSelect={onSelect} labels={labels} /><div className="mt-2 flex items-center gap-1.5 px-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{labels.renderProgressReady.replace('{seconds}', Math.max(1, Math.round(slot.elapsedMs / 1000)).toString())}</div></div>;
+  }
+  const percent = slot.status === 'error' ? 0 : Math.min(94, Math.max(slot.percent, Math.round(liveElapsedMs / 320) - index * 7));
+  return <div className={`overflow-hidden rounded-xl border p-3 ${slot.status === 'error' ? 'border-red-200 bg-red-50' : 'border-blue-100 bg-white'}`} role="status" aria-live="polite">
+    <div className="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-lg bg-[radial-gradient(circle_at_50%_35%,#f0fbff_0%,#e7f0fb_50%,#dbe5f0_100%)]">
+      {slot.status === 'error' ? <X className="h-8 w-8 text-red-400" /> : <><div className="absolute h-24 w-24 animate-pulse rounded-full bg-cyan-200/40 blur-2xl" /><LoaderCircle className="relative h-8 w-8 animate-spin text-[#0b4f9c]" /></>}
+      <span className="absolute left-3 top-3 rounded bg-slate-950/60 px-2 py-1 text-[10px] font-black text-white backdrop-blur">0{index + 1}</span>
+      <span className="absolute bottom-3 rounded-full bg-white/90 px-3 py-1.5 font-mono text-xs font-black text-[#0b4f9c] shadow-sm">{percent}%</span>
+    </div>
+    <div className="mt-3 flex items-center justify-between gap-3 text-[11px] font-bold"><span className={slot.status === 'error' ? 'text-red-700' : 'text-slate-600'}>{slot.status === 'error' ? slot.error : labels.renderProgressGenerating.replace('{index}', String(index + 1))}</span><span className="shrink-0 font-mono text-slate-400">{Math.round(liveElapsedMs / 1000)}s</span></div>
+    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-[width] duration-500 ${slot.status === 'error' ? 'bg-red-400' : 'bg-gradient-to-r from-[#0b4f9c] to-cyan-400'}`} style={{ width: `${percent}%` }} /></div>
+  </div>;
+}
+
 type GiftImageResult = { assetId?: number; dataUrl?: string; url?: string };
 type GiftAiClientError = { configuration: boolean; reason?: string; message?: string };
 
@@ -1059,12 +1134,37 @@ function editClientErrorMessage(error: unknown, language: GiftLanguage) {
   return message || (language === 'zh' ? '图片编辑失败，本次未生成新图片，请稍后重试。' : 'Image editing failed. No new image was created; please try again.');
 }
 
-function renderPrompt(language: GiftLanguage, brief: string, tags: string[], finish: FinishMode, paintColor: string) {
-  const finishText = finish === 'paint'
-    ? `single-color matte spray paint finish in exactly ${paintColor}. The entire object must use this one uniform solid paint color; no gradients, no color blocking, no accent colors, no metallic parts, and no secondary material colors. Natural lighting and shadows may change brightness only`
-    : 'restrained antique bronze finish, subtle patina, premium commemorative appearance';
+function surfaceEffectPrompt(language: GiftLanguage, effect: SurfaceEffectId, paintColor: string) {
+  const prompts: Record<SurfaceEffectId, { zh: string; en: string }> = {
+    bronze: { zh: '克制的铜做旧表面，带细腻古铜色与自然旧化层次，具有高级纪念感', en: 'a restrained antique-bronze surface with subtle patina and a premium commemorative appearance' },
+    transparent: { zh: '透明树脂或透明亚克力般的通透表面，边缘有清晰折射和高光，主体仍保持完整可打印实体结构', en: 'a clear transparent-resin or acrylic-like surface with crisp refraction and highlights while retaining a complete printable solid form' },
+    silver: { zh: '均匀精致的金属银表面，具有现代工业感与受控的金属高光', en: 'a refined metallic-silver surface with modern industrial character and controlled metallic highlights' },
+    red: { zh: '均匀亮红色高光表面，颜色醒目饱满，不使用渐变、拼色或其他材质色', en: 'a uniform bright-red glossy surface with vivid saturated color and no gradients, color blocking, or secondary materials' },
+    brown: { zh: '均匀亮棕色高光表面，色调温暖沉稳，不使用渐变、拼色或其他材质色', en: 'a uniform glossy bright-brown surface with a warm steady tone and no gradients, color blocking, or secondary materials' },
+    black: { zh: '均匀亮黑色高光表面，呈现克制专业的高级质感，不使用其他材质色', en: 'a uniform glossy black surface with a restrained premium professional appearance and no secondary material colors' },
+    glass: { zh: '琉璃灰原色表面，保留灰色半透明材质与温润玻璃光泽', en: 'an original glass-gray surface with translucent gray material and a soft glass-like sheen' },
+    custom: { zh: `均匀的自定义颜色 ${paintColor} 表面，不使用渐变、拼色或其他材质色`, en: `a uniform custom-color ${paintColor} surface with no gradients, color blocking, or secondary material colors` },
+  };
+  return prompts[effect][language];
+}
+
+function renderPrompt(language: GiftLanguage, brief: string, tags: string[], effect: SurfaceEffectId, paintColor: string) {
+  const finishText = surfaceEffectPrompt(language, effect, paintColor);
   const request = brief.trim() || (language === 'zh' ? '根据客户画像设计一件商务礼品' : 'Design a business gift from the customer profile');
-  return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, 3D-printable desk gift as a product render. ${finishText}. Plain white or light-gray background. One centered object occupying more than 70% of the image. Stable base, closed solid form, clear silhouette, manufacturable thickness, no thin floating structures, no packaging, no hands, no text, no logo, no watermark. Three-quarter front view. The shape must be suitable for image-to-3D generation and resin 3D printing.`;
+  return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, 3D-printable desk gift as a product render. ${finishText}. Fully transparent background with a real alpha channel; no backdrop, floor plane, cast shadow, contact shadow, model shadow, or detached shadow. The object must be one watertight closed single-shell solid: every part physically joined to the main body, self-supporting, with no floating, suspended, disconnected, intersecting, open, paper-thin, or fragile parts. Use a stable integrated base, closed solid form, clear silhouette, manufacturable thickness, and geometry suitable for resin 3D printing. Use even neutral studio lighting without shadows. One centered object occupying more than 70% of the image. No packaging, hands, text, logo, or watermark. Three-quarter front view.`;
+}
+
+function surfaceEffectBackend(effect: SurfaceEffectId, paintColor: string) {
+  if (effect === 'bronze') return { finishType: 'bronze' as const, paintColor: null };
+  if (effect === 'transparent' || effect === 'glass') return { finishType: 'other' as const, paintColor: null };
+  return { finishType: 'paint' as const, paintColor };
+}
+
+function restoredSurfaceEffect(finishType: string | null | undefined, paintColor: string | null | undefined): SurfaceEffectId {
+  if (finishType === 'bronze') return 'bronze';
+  if (finishType === 'other') return 'glass';
+  const normalized = paintColor?.toUpperCase();
+  return surfaceEffectPresets.find((item) => item.id !== 'custom' && item.id !== 'bronze' && item.hex === normalized)?.id || 'custom';
 }
 
 function whiteBackgroundPrompt() {
@@ -1072,7 +1172,7 @@ function whiteBackgroundPrompt() {
 }
 
 function monochromePaintPrompt(paintColor: string) {
-  return `Re-render the complete isolated subject in exactly one uniform matte spray paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. Remove original surface colors, patterns, text, and material variation while preserving only natural light and form-defining shadows. No gradients, color blocking, accent colors, metallic parts, or secondary materials. Keep the pure white #FFFFFF background. Do not add, remove, crop, or redesign any geometry.`;
+  return `Re-render the complete isolated subject in exactly one uniform matte spray paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. The gift must remain one watertight closed single-shell solid with every component physically joined and self-supporting; no floating, suspended, disconnected, open, paper-thin, or fragile parts. Remove original surface colors, patterns, text, and material variation. No gradients, color blocking, accent colors, metallic parts, or secondary materials. Keep a fully transparent background with a real alpha channel; do not add a white or gray backdrop, floor, cast shadow, contact shadow, model shadow, or halo. Use even neutral lighting without shadows. Do not crop or redesign the intended gift.`;
 }
 
 function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResumeConsumed }: { language: GiftLanguage; onOrder: (model: GiftModel) => void; onDraftUpdated: () => void; resumeDraft?: GiftDraftResume | null; onResumeConsumed?: () => void }) {
@@ -1102,12 +1202,17 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [openProfileGroup, setOpenProfileGroup] = useState<ProfileGroupId | null>(null);
   const profileMenusRef = useRef<HTMLDivElement>(null);
   const [finish, setFinish] = useState<FinishMode>('paint');
+  const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId>('bronze');
   const [paintColor, setPaintColor] = useState('#0B77B7');
   const [paintColorInput, setPaintColorInput] = useState('#0B77B7');
   const [paintMenuOpen, setPaintMenuOpen] = useState(false);
   const paintMenuRef = useRef<HTMLDivElement>(null);
   const [briefStatus, setBriefStatus] = useState<BriefStatus>('idle');
   const [renderImages, setRenderImages] = useState<GiftImageResult[]>([]);
+  const [renderSlots, setRenderSlots] = useState<RenderSlot[]>([]);
+  const [renderStartedAt, setRenderStartedAt] = useState<number | null>(null);
+  const [renderElapsedMs, setRenderElapsedMs] = useState(0);
+  const renderResultsRef = useRef<HTMLDivElement>(null);
   const [briefDraftRequestId, setBriefDraftRequestId] = useState<number | null>(null);
   const [selectedRender, setSelectedRender] = useState<number | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
@@ -1174,6 +1279,12 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   }, [openProfileGroup]);
 
   useEffect(() => {
+    if (briefStatus !== 'generating-render' || !renderStartedAt) return;
+    const timer = window.setInterval(() => setRenderElapsedMs(Date.now() - renderStartedAt), 250);
+    return () => window.clearInterval(timer);
+  }, [briefStatus, renderStartedAt]);
+
+  useEffect(() => {
     if (briefAutoGenerated) setBrief(buildGiftBrief(language, profileSelections));
   }, [language]);
 
@@ -1212,6 +1323,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     } satisfies GeneratedGiftModel : null;
 
     setFinish(request.finishType === 'bronze' ? 'bronze' : 'paint');
+    setSurfaceEffect(restoredSurfaceEffect(request.finishType, request.paintColor));
     if (request.paintColor) { setPaintColor(request.paintColor); setPaintColorInput(request.paintColor); }
     setAiError(null);
     setModelProgress(null);
@@ -1251,7 +1363,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         } else {
           setMode('brief');
           setBriefDraftRequestId(request.id);
-          setRenderImages([{ assetId: imageAsset.assetId, url: `/api/gift/assets/${imageAsset.assetId}` }]);
+          const restoredImage = { assetId: imageAsset.assetId, url: `/api/gift/assets/${imageAsset.assetId}` };
+          setRenderImages([restoredImage]);
+          setRenderSlots([{ status: 'ready', image: restoredImage, percent: 100, elapsedMs: 0 }]);
           setSelectedRender(0);
           setBriefStatus(restoredModel ? 'model-ready' : 'render-ready');
           setBrief(request.requestNotes || buildGiftBrief(language, restoredProfileSelections));
@@ -1495,6 +1609,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   function resetBriefResults() {
     setBriefStatus('idle');
     setRenderImages([]);
+    setRenderSlots([]);
+    setRenderStartedAt(null);
+    setRenderElapsedMs(0);
     setSelectedRender(null);
     setBriefModel(undefined);
     setModelProgress(null);
@@ -1524,40 +1641,94 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setImagePaintAssetId(null);
     if (imageView === 'paint') setImageView(imageUrl ? 'prepared' : 'original');
     if (imageFile) setImagePreparationNotice(labels.imagePrepared);
-    if (mode === 'brief') resetBriefResults();
+    if (mode === 'brief') { setSurfaceEffect('custom'); resetBriefResults(); }
     else clearAiError();
+  }
+
+  function chooseSurfaceEffect(effect: SurfaceEffectId) {
+    const preset = surfaceEffectPresets.find((item) => item.id === effect);
+    setSurfaceEffect(effect);
+    setFinish(effect === 'bronze' ? 'bronze' : 'paint');
+    setPaintMenuOpen(false);
+    if (preset && effect !== 'custom') {
+      setPaintColor(preset.hex);
+      setPaintColorInput(preset.hex);
+    }
+    resetBriefResults();
   }
 
   async function generateRenders() {
     if (!brief.trim() && selectedProfileTags.length === 0) return;
     clearAiError();
+    const startedAt = Date.now();
     setBriefStatus('generating-render');
     setRenderImages([]);
+    setRenderStartedAt(startedAt);
+    setRenderElapsedMs(0);
+    setRenderSlots([0, 1, 2].map(() => ({ status: 'loading', percent: 3, elapsedMs: 0 })));
+    window.setTimeout(() => renderResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
     setSelectedRender(null);
+    let readyCount = 0;
     try {
+      const backendFinish = surfaceEffectBackend(surfaceEffect, paintColor);
       const response = await fetch('/api/gift/ai/render', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({
-          prompt: renderPrompt(language, brief, selectedProfileTags, finish, paintColor),
+          stream: true,
+          prompt: renderPrompt(language, brief, selectedProfileTags, surfaceEffect, paintColor),
           draftRequestId: briefDraftRequestId,
           draftTitle: language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft',
           businessScene: selectedProfileTags.slice(0, 4).join(' · '),
-          finishType: finish,
-          paintColor: finish === 'paint' ? paintColor : null,
+          finishType: backendFinish.finishType,
+          paintColor: backendFinish.paintColor,
           brief,
-          specifications: { source: 'ai_brief', profileTags: selectedProfileTags },
+          specifications: { source: 'ai_brief', profileTags: selectedProfileTags, surfaceEffect },
         }),
       });
       if (!response.ok) throw await apiErrorMessage(response);
-      const payload = await response.json() as { draft?: { id?: number }; images?: GiftImageResult[] };
-      if (!payload.draft?.id || !payload.images?.length || payload.images.some((image) => !image.assetId)) throw { configuration: false, message: 'Generated images were not saved to the gift draft.' };
-      setBriefDraftRequestId(payload.draft.id);
-      setRenderImages(payload.images);
-      setBriefStatus('render-ready');
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/x-ndjson') || !response.body) {
+        const payload = await response.json() as { draft?: { id?: number }; images?: GiftImageResult[] };
+        if (!payload.draft?.id || !payload.images?.length || payload.images.some((image) => !image.assetId)) throw { configuration: false, message: 'Generated images were not saved to the gift draft.' };
+        setBriefDraftRequestId(payload.draft.id);
+        setRenderImages(payload.images);
+        setRenderSlots(payload.images.map((image, index) => ({ status: 'ready', image, percent: 100, elapsedMs: Date.now() - startedAt + index * 150 })));
+        setBriefStatus('render-ready');
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const handleLine = (line: string) => {
+        if (!line.trim()) return;
+        const message = JSON.parse(line) as { type?: string; index?: number; image?: GiftImageResult; draft?: { id?: number }; error?: string; message?: string };
+        if (message.type === 'image' && Number.isInteger(message.index) && message.image) {
+          const index = Number(message.index);
+          readyCount += 1;
+          setBriefDraftRequestId(message.draft?.id || null);
+          setRenderImages((current) => { const next = [...current]; next[index] = message.image!; return next; });
+          setRenderSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { status: 'ready', image: message.image, percent: 100, elapsedMs: Date.now() - startedAt } : slot));
+          setSelectedRender((current) => current === null ? index : current);
+        }
+        if (message.type === 'error') throw { configuration: false, reason: message.error, message: message.message };
+      };
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) handleLine(line);
+        if (chunk.done) break;
+      }
+      if (buffer.trim()) handleLine(buffer);
+      setBriefStatus(readyCount > 0 ? 'render-ready' : 'idle');
+      setRenderStartedAt(null);
     } catch (error) {
-      setBriefStatus('idle');
+      setRenderSlots((current) => current.map((slot) => slot.status === 'loading' ? { ...slot, status: 'error', error: language === 'zh' ? '生成失败，请重试' : 'Generation failed. Retry.' } : slot));
+      setBriefStatus(readyCount > 0 ? 'render-ready' : 'idle');
+      setRenderStartedAt(null);
       setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
     }
   }
@@ -1576,16 +1747,15 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       formData.set('image', sourceFile);
       formData.set('stage', 'render_edit');
       formData.set('draftTitle', language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft');
-      formData.set('finishType', finish);
+      const backendFinish = surfaceEffectBackend(surfaceEffect, paintColor);
+      formData.set('finishType', backendFinish.finishType);
       formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
       formData.set('brief', brief);
-      if (finish === 'paint') formData.set('paintColor', paintColor);
+      if (backendFinish.paintColor) formData.set('paintColor', backendFinish.paintColor);
       if (briefDraftRequestId) formData.set('draftRequestId', String(briefDraftRequestId));
       const selectedAssetId = selectedImage?.assetId;
       if (selectedAssetId) formData.set('sourceAssetId', String(selectedAssetId));
-      const finishConstraint = finish === 'paint'
-        ? `Keep the entire gift in exactly one uniform solid paint color ${paintColor}. Do not introduce gradients, color blocking, accent colors, metallic parts, or secondary material colors.`
-        : 'Keep the restrained antique bronze material and subtle patina consistent across the gift.';
+      const finishConstraint = surfaceEffectPrompt(language, surfaceEffect, paintColor);
       formData.set('prompt', `${editPrompt.trim()}\n${finishConstraint}`);
       if (editMask) formData.set('mask', editMask);
       const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
@@ -1594,6 +1764,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       if (!payload.draft?.id || !payload.image?.assetId || !giftImageSource(payload.image)) throw { configuration: false, message: 'Edited image was not saved to the gift draft.' };
       setBriefDraftRequestId(payload.draft.id);
       setRenderImages((current) => [...current, payload.image!]);
+      setRenderSlots((current) => [...current, { status: 'ready', image: payload.image!, percent: 100, elapsedMs: 0 }]);
       setSelectedRender(renderImages.length);
       setEditPrompt('');
       setEditMask(null);
@@ -1630,6 +1801,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
   }
 
+  const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === surfaceEffect);
   const generatedModel: GiftModel = {
     id: 'ai-generated',
     name: language === 'zh' ? 'AI 客户专属礼品' : 'AI customer-specific gift',
@@ -1637,7 +1809,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     category: 'custom',
     categoryLabel: labels.custom,
     useCase: selectedProfileTags.slice(0, 2).join(' · ') || labels.custom,
-    finishLabel: finish === 'paint' ? `${labels.paint} · ${paintColor}` : labels.bronze,
+    finishLabel: selectedSurfacePreset ? labels[selectedSurfacePreset.label] : labels.surfaceCustom,
     finish,
     color: finish === 'paint' ? 'from-[#075985] to-[#67e8f9]' : 'from-[#6b3518] to-[#d6a15f]',
     accent: 'AI',
@@ -1649,10 +1821,49 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       ? imageUrl
       : imageOriginalUrl;
 
+  if (mode === 'brief') return (
+    <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
+      <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className="flex items-start gap-4 bg-white p-5 text-left transition hover:bg-slate-50 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-500"><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" className="flex items-start gap-4 border-t border-slate-200 bg-blue-50/70 p-5 text-left shadow-[inset_0_-3px_0_#2563eb] md:border-l md:border-t-0 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#0b4f9c] text-white"><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
+
+      {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'approval' ? labels.aiApprovalError : aiError.reason === 'quota' ? labels.aiQuotaError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{!['validation', 'approval', 'quota'].includes(aiError.reason || '') && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
+
+      <div className="p-5 md:p-8"><div className="mx-auto max-w-6xl space-y-5">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">1</span><div><h3 className="text-base font-black text-slate-950">{labels.profileTags}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.profileAutoHint}</p></div></div>
+          <div ref={profileMenusRef} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div>
+          {selectedProfileTags.length ? <div className="mt-4 flex flex-wrap gap-2">{selectedProfileTags.map((tag) => <span key={tag} className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-bold text-[#0b4f9c]">{tag}</span>)}</div> : null}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">2</span><div><h3 className="text-base font-black text-slate-950">{labels.customerBrief}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '客户标签会自动生成礼品创意，你可以在生成图片前继续编辑和补充。' : 'Customer tags create the gift idea automatically. Edit or expand it before generating images.'}</p></div></div>
+          <textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={6} placeholder={labels.customerBriefPlaceholder} className="mt-5 w-full resize-y rounded-xl border border-slate-200 bg-slate-50/40 px-4 py-4 text-sm font-medium leading-7 text-slate-700 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-2 focus:ring-cyan-100" />
+          <div className="mt-2 flex justify-between text-[11px] font-bold text-slate-400"><span>{briefAutoGenerated ? (language === 'zh' ? '已根据客户画像自动生成，可直接编辑' : 'Auto-generated from the profile and fully editable') : (language === 'zh' ? '手动编辑中' : 'Editing manually')}</span><span>{brief.length}/4000</span></div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">3</span><div><h3 className="text-base font-black text-slate-950">{labels.surfaceEffect}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.surfaceEffectHint}</p></div></div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{surfaceEffectPresets.map((preset) => { const active = surfaceEffect === preset.id; return <button key={preset.id} type="button" onClick={() => chooseSurfaceEffect(preset.id)} className={`min-h-24 rounded-xl border p-4 text-left transition ${active ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm'}`}><div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: preset.hex }} />{labels[preset.label]}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>; })}</div>
+          {surfaceEffect === 'custom' ? <div className="mt-4 flex max-w-md items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50/50 p-3"><label className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-xs font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div> : null}
+          <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div>
+        </div>
+
+        {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); setEditNotice(false); }} labels={labels} />)}</div>
+
+          {selectedRender !== null && renderImages[selectedRender] ? <div className="mt-6 rounded-xl border border-blue-100 bg-white p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{editError}</span> : null}</div></div> : null}
+
+          {briefStatus === 'generating-model' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : <button type="button" onClick={generateBriefModel} disabled={selectedRender === null || !renderImages[selectedRender]} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45"><Boxes className="h-5 w-5" />{labels.generateFromRender}</button>}
+        </div> : null}
+        {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
+      </div></div>
+      {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
+    </section>
+  );
+
   return (
     <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
-      <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className={`flex items-start gap-4 p-5 text-left transition md:p-6 ${mode === 'image' ? 'bg-cyan-50/70 shadow-[inset_0_-3px_0_#0891b2]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'image' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" onClick={() => setMode('brief')} className={`flex items-start gap-4 border-t border-slate-200 p-5 text-left transition md:border-l md:border-t-0 md:p-6 ${mode === 'brief' ? 'bg-blue-50/70 shadow-[inset_0_-3px_0_#2563eb]' : 'bg-white hover:bg-slate-50'}`}><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${mode === 'brief' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-500'}`}><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
+      <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className="flex items-start gap-4 bg-cyan-50/70 p-5 text-left shadow-[inset_0_-3px_0_#0891b2] transition md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#0b4f9c] text-white"><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" onClick={() => setMode('brief')} className="flex items-start gap-4 border-t border-slate-200 bg-white p-5 text-left transition hover:bg-slate-50 md:border-l md:border-t-0 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-500"><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
 
       {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'approval' ? labels.aiApprovalError : aiError.reason === 'quota' ? labels.aiQuotaError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{!['validation', 'approval', 'quota'].includes(aiError.reason || '') && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
 
