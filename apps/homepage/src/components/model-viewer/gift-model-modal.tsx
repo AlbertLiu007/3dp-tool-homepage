@@ -27,13 +27,13 @@ export type GeneratedGiftModel = {
 
 const modalCopy = {
   zh: {
-    title: '白膜 3D 模型预览', downloading: '正在加载模型', parsing: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。', previewLoaded: '预览模型已加载', previewFileSize: '预览文件大小', sourceLoading: '源模型', sourceParsing: '正在解析源模型', sourceReady: '高质量模型已加载', sourceFailed: '预览模型已加载',
+    title: '白膜 3D 模型预览', downloading: '正在加载模型', parsing: '正在本机解析模型', ready: '已完成本机解析', failed: '模型解析失败，请下载后检查。', previewLoaded: '预览模型已加载', previewFileSize: '预览文件大小', sourceFileSize: '源文件大小', sourceLoading: '源模型', sourceParsing: '正在解析源模型', sourceReady: '高质量模型已加载', sourceFailed: '预览模型已加载',
     close: '关闭', download: '下载 STL 模型', fileName: '文件名', fileSize: '文件大小', dimensions: '长 × 宽 × 高', volume: '体积', surfaceArea: '表面积', triangles: '三角面片',
     scale: '等比缩放', saveScale: '保存缩放', savingScale: '保存中…', scaleFailed: '缩放保存失败，请重试。', saveBeforeDownload: '请先保存当前缩放比例', scaleInvalid: '请输入 10–99999 的整数',
     lightFixed: '固定侧光', lightFollow: '跟随视角光', lightFixedShort: '固定光', lightFollowShort: '跟随光', showGrid: '显示网格', hideGrid: '隐藏网格', gridOn: '网格开', gridOff: '网格关', rotatePan: '旋转/平移', rotate: '旋转', pan: '平移', resetView: '重置视角',
   },
   en: {
-    title: 'White 3D model preview', downloading: 'Loading model', parsing: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.', previewLoaded: 'Preview loaded', previewFileSize: 'Preview file size', sourceLoading: 'Source model', sourceParsing: 'Parsing source model', sourceReady: 'High-quality model loaded', sourceFailed: 'Preview loaded',
+    title: 'White 3D model preview', downloading: 'Loading model', parsing: 'Parsing model locally', ready: 'Local parsing complete', failed: 'Model parsing failed. Download the file to inspect it.', previewLoaded: 'Preview loaded', previewFileSize: 'Preview file size', sourceFileSize: 'Source file size', sourceLoading: 'Source model', sourceParsing: 'Parsing source model', sourceReady: 'High-quality model loaded', sourceFailed: 'Preview loaded',
     close: 'Close', download: 'Download STL model', fileName: 'File Name', fileSize: 'File Size', dimensions: 'L × W × H', volume: 'Volume', surfaceArea: 'Surface Area', triangles: 'Triangles',
     scale: 'Uniform scale', saveScale: 'Save scale', savingScale: 'Saving…', scaleFailed: 'Unable to save the scaled STL. Please retry.', saveBeforeDownload: 'Save the current scale before downloading', scaleInvalid: 'Enter an integer from 10 to 99999',
     lightFixed: 'Fixed side light', lightFollow: 'Camera-following light', lightFixedShort: 'Fixed', lightFollowShort: 'Follow', showGrid: 'Show Grid', hideGrid: 'Hide Grid', gridOn: 'Grid On', gridOff: 'Grid Off', rotatePan: 'Rotate/Pan', rotate: 'Rotate', pan: 'Pan', resetView: 'Reset View',
@@ -387,8 +387,11 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     triangleCount: measurement.triangleCount,
   } : null;
   const scalePending = scalePercent !== savedScalePercent;
-  const downloadUrl = scaledDownloadUrl || model.modelUrl;
-  const downloadReady = status === 'ready' && Boolean(downloadUrl);
+  // The download target is always the original source asset. The lightweight
+  // preview is only used for rendering and must never become the download URL.
+  const sourceDownloadUrl = model.modelUrl;
+  const downloadUrl = scaledDownloadUrl || sourceDownloadUrl;
+  const downloadReady = Boolean(sourceDownloadUrl) && (!scalePending || Boolean(scaledDownloadUrl));
   const stlFileName = (model.fileName || 'unionam-gift.stl').replace(/\.[^.]+$/, '.stl');
   const downloadName = scalePercent === 100 ? stlFileName : stlFileName.replace(/\.stl$/i, `-${scalePercent}pct.stl`);
   const usingLightweightPreview = Boolean(model.previewModelUrl && model.previewModelUrl !== model.modelUrl);
@@ -416,7 +419,7 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
         <div className="relative z-10 flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-4">
           <div className="flex min-w-0 items-baseline gap-3">
             <strong className="truncate text-sm font-black text-slate-950">{stlFileName}</strong>
-            <span className="shrink-0 text-[11px] font-bold text-slate-400">{usingLightweightPreview ? `${labels.previewFileSize}：${formatFileSize(previewFileSize)}` : `${labels.fileSize}：${formatFileSize(displayedFileSize)}`}</span>
+            <span className="shrink-0 text-[11px] font-bold text-slate-400">{usingLightweightPreview && sourcePhase !== 'ready' ? `${labels.previewFileSize}：${formatFileSize(previewFileSize)}` : `${labels.sourceFileSize}：${formatFileSize(displayedFileSize)}`}</span>
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-2">
             <div className={`hidden min-w-0 items-center gap-1.5 text-[10px] font-medium sm:flex ${sourceStatusActive ? 'text-slate-400' : 'text-slate-300'}`} aria-live="polite" title={sourceStatusText}>
