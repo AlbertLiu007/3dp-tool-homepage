@@ -207,7 +207,7 @@ export async function listGiftOpsModels(search?: string) {
       a.original_filename, a.content_type, a.file_extension, a.size_bytes, a.asset_status,
       uploader.display_name AS uploader_name
     FROM gift_model_asset_links l
-    INNER JOIN gift_assets a ON a.id = l.asset_id
+    INNER JOIN gift_assets a ON a.id = l.asset_id AND a.asset_status = 'active'
     LEFT JOIN gift_employees uploader ON uploader.id = l.uploaded_by_employee_id
     WHERE l.model_id IN (${modelIds.map(() => '?').join(',')})
     ORDER BY l.model_id, l.asset_role, l.version_number DESC

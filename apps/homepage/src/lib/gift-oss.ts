@@ -771,7 +771,7 @@ export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId
     const current = rows[0];
     if (!current) throw new GiftAccessError('Model asset was not found.', 404, 'not_found');
     if (current.asset_role === 'model_preview_3d') throw new GiftAccessError('The preview model is generated automatically and cannot be edited or deleted.', 409, 'validation');
-    if (current.publication_status === 'published' && current.is_current) throw new GiftAccessError('Replace the current file or archive the model before deleting it.', 409, 'validation');
+    if (current.publication_status === 'published' && current.is_current && current.asset_role !== 'main_image') throw new GiftAccessError('Replace the current file or archive the model before deleting it.', 409, 'validation');
     objectKey = String(current.object_key);
     title = String(current.title_zh);
     await connection.execute<ResultSetHeader>('UPDATE gift_assets SET asset_status = \'deleted\', deleted_at = CURRENT_TIMESTAMP(3) WHERE id = ?', [assetId]);
