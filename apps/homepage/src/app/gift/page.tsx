@@ -1788,8 +1788,8 @@ function MyRequestsPanel({ language, refreshKey, expanded: expandedProp, onExpan
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [detailLoading, setDetailLoading] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [internalExpanded, setInternalExpanded] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const expanded = expandedProp ?? internalExpanded;
   const label = (status: string) => giftRequestStatus[status]?.[language] || status;
 
@@ -1811,60 +1811,79 @@ function MyRequestsPanel({ language, refreshKey, expanded: expandedProp, onExpan
 
   useEffect(() => { void loadRequests(); }, [refreshKey]);
 
+  async function fetchRequestDetail(id: number) {
+    const response = await fetch(`/api/gift/requests/${id}`, { cache: 'no-store', credentials: 'same-origin' });
+    const result = await response.json() as MyGiftRequestDetail & { message?: string };
+    if (!response.ok) throw new Error(result.message || '申请详情加载失败');
+    return result;
+  }
+
   async function openRequest(id: number) {
     setError(''); setDetailLoading(true);
     try {
-      const response = await fetch(`/api/gift/requests/${id}`, { cache: 'no-store', credentials: 'same-origin' });
-      const result = await response.json() as MyGiftRequestDetail & { message?: string };
-      if (!response.ok) throw new Error(result.message || '申请详情加载失败');
-      setDetail(result);
+      setDetail(await fetchRequestDetail(id));
     } catch (loadError) { setError(loadError instanceof Error ? loadError.message : '申请详情加载失败'); }
     finally { setDetailLoading(false); }
   }
 
-  async function cancelRequest() {
-    if (!detail || !window.confirm(language === 'zh' ? '确认取消这条打印申请？' : 'Cancel this print request?')) return;
-    const response = await fetch(`/api/gift/requests/${detail.request.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel', reason: language === 'zh' ? '员工主动取消' : 'Cancelled by requester' }) });
-    const result = await response.json() as { message?: string };
-    if (!response.ok) return setError(result.message || '取消失败');
-    setDetail(null); await loadRequests();
-  }
-
-  async function uploadAttachment(file?: File) {
-    if (!file || !detail) return;
-    setUploading(true); setError('');
+  async function cancelRequest(request: MyGiftRequest) {
+    if (!window.confirm(language === 'zh' ? '确认取消这条打印申请？' : 'Cancel this print request?')) return;
+    setBusyAction(`${request.id}:cancel`); setError('');
     try {
-      const data = new FormData(); data.set('file', file); data.set('role', /\.(stl|obj|3mf|glb|gltf)$/i.test(file.name) ? 'source_model' : 'reference');
-      const response = await fetch(`/api/gift/requests/${detail.request.id}/attachments`, { method: 'POST', credentials: 'same-origin', body: data });
+      const response = await fetch(`/api/gift/requests/${request.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel', reason: language === 'zh' ? '员工主动取消' : 'Cancelled by requester' }) });
       const result = await response.json() as { message?: string };
-      if (!response.ok) throw new Error(result.message || '附件上传失败');
-      await openRequest(detail.request.id);
-    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : '附件上传失败'); }
-    finally { setUploading(false); }
+      if (!response.ok) throw new Error(result.message || '取消失败');
+      if (detail?.request.id === request.id) setDetail(null);
+      await loadRequests();
+    } catch (cancelError) { setError(cancelError instanceof Error ? cancelError.message : '取消失败'); }
+    finally { setBusyAction(null); }
   }
 
-  function resumeDraft(action: GiftDraftResume['action']) {
-    if (!detail || detail.request.status !== 'draft') return;
-    const hasImage = detail.attachments.some((file) => file.contentType?.startsWith('image/'));
+  function resumeDraft(target: MyGiftRequestDetail, action: GiftDraftResume['action']) {
+    if (target.request.status !== 'draft') return;
+    const hasImage = target.attachments.some((file) => file.contentType?.startsWith('image/'));
     if (action === 'model' && !hasImage) {
       setError(language === 'zh' ? '这条草稿还没有可用于生成模型的图片。' : 'This draft has no image available for model generation.');
       return;
     }
-    onResume({ request: detail.request, attachments: detail.attachments, action });
+    onResume({ request: target.request, attachments: target.attachments, action });
     setDetail(null);
   }
 
-  async function deleteDraft() {
-    if (!detail || detail.request.status !== 'draft') return;
-    if (!window.confirm(language === 'zh' ? '确认删除这条设计草稿？关联的图片和模型文件也会从 OSS 清理，删除后无法恢复。' : 'Delete this design draft? Its images and model files will also be removed from OSS. This cannot be undone.')) return;
-    setError('');
+  async function draftAction(request: MyGiftRequest, action: GiftDraftResume['action']) {
+    setBusyAction(`${request.id}:${action}`); setError('');
     try {
-      const response = await fetch(`/api/gift/requests/${detail.request.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) });
+      resumeDraft(await fetchRequestDetail(request.id), action);
+    } catch (actionError) { setError(actionError instanceof Error ? actionError.message : '草稿加载失败'); }
+    finally { setBusyAction(null); }
+  }
+
+  async function deleteDraft(request: MyGiftRequest) {
+    if (request.status !== 'draft') return;
+    if (!window.confirm(language === 'zh' ? '确认删除这条设计草稿？关联的图片和模型文件也会从 OSS 清理，删除后无法恢复。' : 'Delete this design draft? Its images and model files will also be removed from OSS. This cannot be undone.')) return;
+    setBusyAction(`${request.id}:delete`); setError('');
+    try {
+      const response = await fetch(`/api/gift/requests/${request.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) });
       const result = await response.json() as { message?: string };
       if (!response.ok) throw new Error(result.message || (language === 'zh' ? '草稿删除失败' : 'Unable to delete the draft.'));
-      setDetail(null);
+      if (detail?.request.id === request.id) setDetail(null);
       await loadRequests();
     } catch (deleteError) { setError(deleteError instanceof Error ? deleteError.message : (language === 'zh' ? '草稿删除失败' : 'Unable to delete the draft.')); }
+    finally { setBusyAction(null); }
+  }
+
+  async function uploadAttachment(request: MyGiftRequest, file?: File) {
+    if (!file) return;
+    setBusyAction(`${request.id}:upload`); setError('');
+    try {
+      const data = new FormData(); data.set('file', file); data.set('role', /\.(stl|obj|3mf|glb|gltf)$/i.test(file.name) ? 'source_model' : 'reference');
+      const response = await fetch(`/api/gift/requests/${request.id}/attachments`, { method: 'POST', credentials: 'same-origin', body: data });
+      const result = await response.json() as { message?: string };
+      if (!response.ok) throw new Error(result.message || '附件上传失败');
+      await loadRequests();
+      if (detail?.request.id === request.id) setDetail(await fetchRequestDetail(request.id));
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : '附件上传失败'); }
+    finally { setBusyAction(null); }
   }
 
   return (
@@ -1875,17 +1894,21 @@ function MyRequestsPanel({ language, refreshKey, expanded: expandedProp, onExpan
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-[#0b4f9c]"><FileText className="h-5 w-5" /></span><div><h2 className="text-sm font-black text-slate-900">{language === 'zh' ? '我的打印申请' : 'My print requests'}</h2><p className="mt-1 text-xs font-medium text-slate-500">{language === 'zh' ? `${requests.length} 条申请，查看审核、排产和交付进度` : `${requests.length} requests · review production and delivery progress`}</p></div></div>
           <ChevronDown className={`h-5 w-5 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
         </button>
-        {expanded ? <div className="border-t border-slate-100 p-5"><div className="mb-4 flex justify-end"><button onClick={() => void loadRequests()} className="inline-flex items-center gap-2 text-xs font-black text-[#0b4f9c]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{language === 'zh' ? '刷新' : 'Refresh'}</button></div>{error ? <p className="mb-4 rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}{!loading && requests.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center text-xs font-bold text-slate-400">{language === 'zh' ? '还没有提交打印申请' : 'No print requests yet'}</div> : <div className="space-y-2">{requests.map((request) => <div key={request.id} role="button" tabIndex={0} aria-busy={detailLoading} aria-label={`${language === 'zh' ? '查看申请详情' : 'View request details'} ${request.requestNo}`} onClick={() => void openRequest(request.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRequest(request.id); } }} className="grid w-full cursor-pointer items-center gap-3 rounded-lg border border-slate-100 p-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50/30 focus:outline-none focus:ring-2 focus:ring-cyan-200 md:grid-cols-[285px_1fr_110px_120px_24px]"><div className="flex min-w-0 items-center gap-3"><span className="shrink-0 font-mono text-xs font-black text-[#0b4f9c]">{request.requestNo}</span><RequestAssetThumbnail request={request} language={language} onPreviewModel={onPreviewModel} onPreviewImage={onPreviewImage} /></div><div className="min-w-0"><strong className="block truncate text-sm text-slate-900">{request.title}</strong><small className="text-slate-500">{request.quantity} {language === 'zh' ? '件' : 'pcs'} · {request.modelTitle || request.businessScene || request.requestType}</small></div><span className="text-xs font-black text-slate-600">{label(request.status)}</span><span className="text-xs text-slate-400">{new Date(request.createdAt).toLocaleDateString()}</span>{detailLoading ? <LoaderCircle className="h-4 w-4 animate-spin text-[#0b4f9c]" /> : <ChevronRight className="h-4 w-4 text-slate-300" />}</div>)}</div>}</div> : null}
+        {expanded ? <div className="border-t border-slate-100 p-5"><div className="mb-4 flex justify-end"><button onClick={() => void loadRequests()} className="inline-flex items-center gap-2 text-xs font-black text-[#0b4f9c]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />{language === 'zh' ? '刷新' : 'Refresh'}</button></div>{error ? <p className="mb-4 rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}{!loading && requests.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 py-10 text-center text-xs font-bold text-slate-400">{language === 'zh' ? '还没有提交打印申请' : 'No print requests yet'}</div> : <div className="space-y-2">{requests.map((request) => <div key={request.id} role="button" tabIndex={0} aria-busy={detailLoading || Boolean(busyAction?.startsWith(`${request.id}:`))} aria-label={`${language === 'zh' ? '查看申请详情' : 'View request details'} ${request.requestNo}`} onClick={() => void openRequest(request.id)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openRequest(request.id); } }} className="grid w-full cursor-pointer items-center gap-3 rounded-lg border border-slate-100 p-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50/30 focus:outline-none focus:ring-2 focus:ring-cyan-200 md:grid-cols-[285px_minmax(220px,1fr)_110px_120px_minmax(250px,auto)]"><div className="flex min-w-0 items-center gap-3"><span className="shrink-0 font-mono text-xs font-black text-[#0b4f9c]">{request.requestNo}</span><RequestAssetThumbnail request={request} language={language} onPreviewModel={onPreviewModel} onPreviewImage={onPreviewImage} /></div><div className="min-w-0"><strong className="block truncate text-sm text-slate-900">{request.title}</strong><small className="text-slate-500">{request.quantity} {language === 'zh' ? '件' : 'pcs'} · {request.modelTitle || request.businessScene || request.requestType}</small></div><span className="text-xs font-black text-slate-600">{label(request.status)}</span><span className="text-xs text-slate-400">{new Date(request.createdAt).toLocaleDateString()}</span><RequestActionButtons request={request} language={language} busyAction={busyAction} onDraftAction={(action) => void draftAction(request, action)} onDelete={() => void deleteDraft(request)} onCancel={() => void cancelRequest(request)} onUpload={(file) => void uploadAttachment(request, file)} /> </div>)}</div>}</div> : null}
       </div>
-      {detail ? <div className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45"><div className="h-full w-full max-w-2xl overflow-y-auto bg-slate-100 p-6 shadow-2xl"><div className="flex items-start justify-between"><div><div className="font-mono text-xs font-black text-cyan-700">{detail.request.requestNo}</div><h2 className="mt-2 text-2xl font-black">{detail.request.title}</h2><p className="mt-1 text-sm font-bold text-slate-500">{label(detail.request.status)}</p></div><button onClick={() => setDetail(null)}><X /></button></div><div className="mt-5 grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-2"><RequestInfo label={language === 'zh' ? '数量与工艺' : 'Quantity & finish'} value={`${detail.request.quantity} · ${detail.request.finishType}${detail.request.paintColor ? ` ${detail.request.paintColor}` : ''}`} /><RequestInfo label={language === 'zh' ? '期望完成' : 'Requested date'} value={detail.request.requestedCompletionDate || '-'} /><RequestInfo label={language === 'zh' ? '生产批次' : 'Batch'} value={detail.request.productionBatchNo || '-'} /><RequestInfo label={language === 'zh' ? '计划完成' : 'Scheduled completion'} value={detail.request.scheduledCompleteAt ? new Date(detail.request.scheduledCompleteAt).toLocaleString() : '-'} /><RequestInfo label={language === 'zh' ? '负责人' : 'Operator'} value={detail.request.assigneeName || '-'} /><RequestInfo label={language === 'zh' ? '交付信息' : 'Delivery'} value={[detail.request.deliveryRecipient, detail.request.deliveryNotes].filter(Boolean).join(' · ') || '-'} /></div><div className="mt-5 rounded-xl bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-black">{language === 'zh' ? '草稿与申请资产' : 'Draft and request assets'}</h3><label className="cursor-pointer rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-[#0b4f9c]"><UploadCloud className="mr-1 inline h-4 w-4" />{uploading ? '上传中…' : language === 'zh' ? '补充附件' : 'Add file'}<input disabled={uploading} type="file" className="sr-only" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.attachments.map((file) => <a key={file.id} href={`/api/gift/assets/${file.assetId}?download=1`} className="overflow-hidden rounded-md border border-slate-100 bg-slate-50 text-xs font-bold text-slate-700">{file.contentType?.startsWith('image/') ? <img src={`/api/gift/assets/${file.assetId}`} alt={file.filename} className="aspect-[4/3] w-full bg-white object-contain" /> : <div className="grid aspect-[4/3] place-items-center bg-slate-100"><Layers3 className="h-10 w-10 text-slate-300" /></div>}<span className="flex items-center justify-between gap-2 p-3"><span className="truncate">{file.filename}</span><Download className="h-4 w-4 shrink-0 text-[#0b4f9c]" /></span></a>)}</div></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '处理进度' : 'Timeline'}</h3><div className="mt-4 space-y-4">{detail.events.map((event) => <div key={event.id} className="border-l-2 border-cyan-200 pl-4"><div className="text-sm font-black">{event.toStatus ? label(event.toStatus) : event.type}</div><div className="mt-1 text-xs text-slate-400">{event.actorName} · {new Date(event.createdAt).toLocaleString()}</div>{event.comment ? <p className="mt-1 text-xs text-slate-600">{event.comment}</p> : null}</div>)}</div></div>{['submitted', 'reviewing', 'approved', 'queued'].includes(detail.request.status) ? <button onClick={() => void cancelRequest()} className="mt-5 rounded-md border border-red-200 px-4 py-2 text-xs font-black text-red-700">{language === 'zh' ? '取消申请' : 'Cancel request'}</button> : null}</div></div> : null}
+      {detail ? <div role="presentation" className="fixed inset-0 z-[80] flex justify-end bg-slate-950/45" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}><div role="dialog" aria-modal="true" aria-label={detail.request.title} onMouseDown={(event) => event.stopPropagation()} className="h-full w-full max-w-2xl overflow-y-auto bg-slate-100 p-6 shadow-2xl"><div className="sticky -top-6 z-10 -mx-6 -mt-6 mb-5 flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-100/95 px-6 pb-4 pt-6 backdrop-blur"><div className="min-w-0"><div className="font-mono text-xs font-black text-cyan-700">{detail.request.requestNo}</div><h2 className="mt-1 truncate text-xl font-black">{detail.request.title}</h2><p className="mt-1 text-sm font-bold text-slate-500">{label(detail.request.status)}</p></div><button type="button" onClick={() => setDetail(null)} className="sticky top-0 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-cyan-300 hover:text-[#0b4f9c]" title={language === 'zh' ? '关闭详情' : 'Close details'} aria-label={language === 'zh' ? '关闭详情' : 'Close details'}><X className="h-5 w-5" /></button></div><div className="grid gap-4 rounded-xl bg-white p-5 sm:grid-cols-2"><RequestInfo label={language === 'zh' ? '数量与工艺' : 'Quantity & finish'} value={`${detail.request.quantity} · ${detail.request.finishType}${detail.request.paintColor ? ` ${detail.request.paintColor}` : ''}`} /><RequestInfo label={language === 'zh' ? '期望完成' : 'Requested date'} value={detail.request.requestedCompletionDate || '-'} /><RequestInfo label={language === 'zh' ? '生产批次' : 'Batch'} value={detail.request.productionBatchNo || '-'} /><RequestInfo label={language === 'zh' ? '计划完成' : 'Scheduled completion'} value={detail.request.scheduledCompleteAt ? new Date(detail.request.scheduledCompleteAt).toLocaleString() : '-'} /><RequestInfo label={language === 'zh' ? '负责人' : 'Operator'} value={detail.request.assigneeName || '-'} /><RequestInfo label={language === 'zh' ? '交付信息' : 'Delivery'} value={[detail.request.deliveryRecipient, detail.request.deliveryNotes].filter(Boolean).join(' · ') || '-'} /></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '申请资产' : 'Request assets'}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{detail.attachments.map((file) => <a key={file.id} href={`/api/gift/assets/${file.assetId}?download=1`} className="overflow-hidden rounded-md border border-slate-100 bg-slate-50 text-xs font-bold text-slate-700">{file.contentType?.startsWith('image/') ? <img src={`/api/gift/assets/${file.assetId}`} alt={file.filename} className="aspect-[4/3] w-full bg-white object-contain" /> : <div className="grid aspect-[4/3] place-items-center bg-slate-100"><Layers3 className="h-10 w-10 text-slate-300" /></div>}<span className="flex items-center justify-between gap-2 p-3"><span className="truncate">{file.filename}</span><Download className="h-4 w-4 shrink-0 text-[#0b4f9c]" /></span></a>)}</div></div><div className="mt-5 rounded-xl bg-white p-5"><h3 className="font-black">{language === 'zh' ? '处理进度' : 'Timeline'}</h3><div className="mt-4 space-y-4">{detail.events.map((event) => <div key={event.id} className="border-l-2 border-cyan-200 pl-4"><div className="text-sm font-black">{event.toStatus ? label(event.toStatus) : event.type}</div><div className="mt-1 text-xs text-slate-400">{event.actorName} · {new Date(event.createdAt).toLocaleString()}</div>{event.comment ? <p className="mt-1 text-xs text-slate-600">{event.comment}</p> : null}</div>)}</div></div></div></div> : null}
       </section>
-      {detail?.request.status === 'draft' ? <DraftActionBar language={language} hasImage={detail.attachments.some((file) => file.contentType?.startsWith('image/'))} onEdit={() => resumeDraft('edit')} onGenerateModel={() => resumeDraft('model')} onDelete={() => void deleteDraft()} /> : null}
+
     </>
   );
 }
 
-function DraftActionBar({ language, hasImage, onEdit, onGenerateModel, onDelete }: { language: GiftLanguage; hasImage: boolean; onEdit: () => void; onGenerateModel: () => void; onDelete: () => void }) {
-  return <div className="fixed bottom-5 left-1/2 z-[120] flex w-[min(92vw,720px)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white/95 p-3 shadow-2xl backdrop-blur"><span className="mr-1 text-xs font-black text-slate-600">{language === 'zh' ? '草稿操作' : 'Draft actions'}</span><button type="button" onClick={onEdit} className="inline-flex items-center gap-2 rounded-md bg-[#0b4f9c] px-3 py-2 text-xs font-black text-white"><Pencil className="h-4 w-4" />{language === 'zh' ? '继续编辑' : 'Continue editing'}</button>{hasImage ? <button type="button" onClick={onGenerateModel} className="inline-flex items-center gap-2 rounded-md border border-cyan-200 px-3 py-2 text-xs font-black text-[#0b4f9c]"><Layers3 className="h-4 w-4" />{language === 'zh' ? '生成白膜 3D 模型' : 'Generate white 3D model'}</button> : null}<button type="button" onClick={onDelete} className="inline-flex items-center gap-2 rounded-md border border-red-200 px-3 py-2 text-xs font-black text-red-700"><Trash2 className="h-4 w-4" />{language === 'zh' ? '删除草稿' : 'Delete draft'}</button></div>;
+function RequestActionButtons({ request, language, busyAction, onDraftAction, onDelete, onCancel, onUpload }: { request: MyGiftRequest; language: GiftLanguage; busyAction: string | null; onDraftAction: (action: GiftDraftResume['action']) => void; onDelete: () => void; onCancel: () => void; onUpload: (file?: File) => void }) {
+  const actionBusy = busyAction?.startsWith(`${request.id}:`) || false;
+  const cancellable = ['submitted', 'reviewing', 'approved', 'queued'].includes(request.status);
+  const uploadable = !['rejected', 'completed', 'cancelled'].includes(request.status);
+  const actionLabel = language === 'zh' ? '操作' : 'Actions';
+  return <div className="flex flex-wrap items-center justify-end gap-1.5" onClick={(event) => event.stopPropagation()} aria-label={actionLabel}>{request.status === 'draft' ? <><button type="button" disabled={actionBusy} onClick={() => onDraftAction('edit')} className="inline-flex items-center gap-1 rounded-md bg-[#0b4f9c] px-2.5 py-1.5 text-[11px] font-black text-white disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />{language === 'zh' ? '继续编辑' : 'Edit'}</button><button type="button" disabled={actionBusy} onClick={() => onDraftAction('model')} className="inline-flex items-center gap-1 rounded-md border border-cyan-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-[#0b4f9c] disabled:opacity-50"><Layers3 className="h-3.5 w-3.5" />{language === 'zh' ? '生成模型' : 'Generate model'}</button><button type="button" disabled={actionBusy} onClick={onDelete} className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-red-700 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />{language === 'zh' ? '删除草稿' : 'Delete'}</button></> : null}{cancellable ? <button type="button" disabled={actionBusy} onClick={onCancel} className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-red-700 disabled:opacity-50"><X className="h-3.5 w-3.5" />{language === 'zh' ? '取消申请' : 'Cancel'}</button> : null}{uploadable ? <label onClick={(event) => event.stopPropagation()} className={`inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-600 ${actionBusy ? 'pointer-events-none opacity-50' : 'hover:border-cyan-300 hover:text-[#0b4f9c]'}`}><UploadCloud className="h-3.5 w-3.5" />{language === 'zh' ? '补充附件' : 'Add file'}<input disabled={actionBusy} type="file" className="sr-only" onChange={(event) => { onUpload(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label> : null}{actionBusy ? <LoaderCircle className="h-4 w-4 animate-spin text-[#0b4f9c]" /> : null}</div>;
 }
 
 function RequestInfo({ label, value }: { label: string; value: string }) {
