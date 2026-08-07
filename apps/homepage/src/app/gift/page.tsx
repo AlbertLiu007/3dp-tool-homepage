@@ -77,6 +77,7 @@ const copy = {
     hello: '你好',
     dashboardDescription: '根据客户行业、偏好和使用场景挑选礼品；展会样品、客户样件及其他业务打印，也可以在这里统一申请。',
     logout: '退出登录',
+    adminPortal: '管理后台',
     chooseTitle: '让每一次打印都服务于业务',
     chooseDescription: '从成熟模型开始，或根据客户调性和业务场景生成新的方案。',
     libraryTitle: '选择客户礼品与业务样件',
@@ -187,6 +188,7 @@ const copy = {
     hello: 'Welcome',
     dashboardDescription: 'Choose a gift that matches your customer, or submit exhibition samples, customer prototypes, and other business printing needs here.',
     logout: 'Sign out',
+    adminPortal: 'Admin console',
     chooseTitle: 'Make every print serve the business',
     chooseDescription: 'Start from a proven model or generate a new concept from the customer and business context.',
     libraryTitle: 'Choose customer gifts and business samples',
@@ -2055,7 +2057,10 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
             <div className="inline-flex items-center gap-2 text-xs font-black text-cyan-700"><BadgeCheck className="h-4 w-4" />{labels.eyebrow}</div>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employee.name}</span><span className="text-xs text-slate-300">·</span><a href="#my-requests" onClick={(event) => { event.preventDefault(); setMyRequestsExpanded(true); window.history.replaceState(null, '', '#my-requests'); window.setTimeout(() => document.getElementById('my-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }} className="text-xs font-medium text-[#0b4f9c]">{labels.orders}</a>{employee.approvalStatus === 'approved' ? <><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{t.quotaToday}：{employee.quota.renderUsed}/{employee.quota.renderDailyLimit} · 3D {employee.quota.modelUsed}/{employee.quota.modelDailyLimit}</span></> : null}</div>
           </div>
-          <button type="button" onClick={onLogout} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-[#0b4f9c]" data-umami-event="gift_logout_click"><LogOut className="h-4 w-4" />{t.logout}</button>
+          <div className="flex items-center gap-2">
+            {employee.role === 'admin' ? <Link href={process.env.NODE_ENV === 'production' ? 'https://ops.unionam.com' : '/ops'} className="inline-flex h-9 items-center gap-2 rounded-md border-2 border-red-400 px-3 text-xs font-black text-red-500 transition hover:bg-red-50" data-umami-event="gift_admin_portal_click"><ShieldCheck className="h-4 w-4" />{t.adminPortal}<ChevronRight className="h-4 w-4" /></Link> : null}
+            <button type="button" onClick={onLogout} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-[#0b4f9c]" data-umami-event="gift_logout_click"><LogOut className="h-4 w-4" />{t.logout}</button>
+          </div>
         </div>
       </section>
 
