@@ -388,7 +388,6 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const downloadReady = status === 'ready' && Boolean(downloadUrl);
   const stlFileName = (model.fileName || 'unionam-gift.stl').replace(/\.[^.]+$/, '.stl');
   const downloadName = scalePercent === 100 ? stlFileName : stlFileName.replace(/\.stl$/i, `-${scalePercent}pct.stl`);
-  const previewImageUrl = model.previewImageUrl || (model.previewAssetId ? `/api/gift/assets/${model.previewAssetId}` : null);
   const usingLightweightPreview = Boolean(model.previewModelUrl && model.previewModelUrl !== model.modelUrl);
   const sourcePercent = sourceProgress.total
     ? Math.min(100, Math.round((sourceProgress.loaded / sourceProgress.total) * 100))
@@ -425,7 +424,7 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
         </div>
         <div className="flex min-h-0 flex-1 flex-col rounded-b-xl bg-white">
           <div className="relative min-h-0 flex-1 bg-[linear-gradient(180deg,#f8fafc,#eef4f7)]">
-            {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : previewImageUrl ? <div className="absolute inset-0 grid place-items-center p-6"><img src={previewImageUrl} alt={labels.title} className="h-full w-full object-contain" /></div> : null}
+            {object ? <GiftModelViewer object={object} color="#cdeef6" labels={labels} /> : null}
             {status !== 'ready' ? <div className="absolute inset-0 grid place-items-center p-4"><div className={`w-full max-w-sm rounded-lg border bg-white/95 px-5 py-4 text-sm font-bold shadow-sm ${status === 'failed' ? 'border-red-200 text-red-700' : 'border-slate-200 text-slate-700'}`}>{status === 'loading' ? <><div className="flex items-center gap-2"><LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-cyan-700" /><span>{loadingLabel}{loadPhase === 'downloading' && downloadPercent !== null ? ` ${downloadPercent}%` : ''}</span></div>{loadPhase === 'downloading' ? <><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-cyan-600 transition-[width] duration-150" style={{ width: `${downloadPercent ?? 0}%` }} /></div><div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500"><span>{downloadPercent !== null ? `${downloadPercent}%` : '--%'}</span><span>{formatFileSize(downloadProgress.loaded)} / {formatFileSize(downloadProgress.total)}</span></div></> : <div className="mt-2 text-xs text-slate-500">{formatFileSize(fileSize)}</div>}</> : labels.failed}</div></div> : null}
           </div>
           <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 text-[11px] text-slate-600">
