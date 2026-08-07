@@ -549,8 +549,8 @@ export async function backfillGiftModelPreviews(limit = 100) {
     SELECT m.id AS model_id, m.model_asset_id, a.owner_employee_id, a.object_key, a.original_filename, a.file_extension
     FROM gift_models m INNER JOIN gift_assets a ON a.id = m.model_asset_id AND a.asset_status = 'active'
     WHERE m.preview_model_asset_id IS NULL AND a.file_extension = 'stl'
-    ORDER BY m.id LIMIT ?
-  `, [safeLimit]);
+    ORDER BY m.id LIMIT ${safeLimit}
+  `);
   for (const row of modelRows) {
     const result = await client.get(String(row.object_key));
     const buffer = Buffer.isBuffer(result.content) ? result.content : Buffer.from(result.content as Uint8Array);
@@ -567,8 +567,8 @@ export async function backfillGiftModelPreviews(limit = 100) {
       INNER JOIN gift_assets preview_a ON preview_a.id = preview_ra.asset_id AND preview_a.asset_status = 'active' AND preview_a.asset_kind = 'model_preview_3d'
       WHERE preview_ra.request_id = r.id
     )
-    ORDER BY r.id LIMIT ?
-  `, [safeLimit]);
+    ORDER BY r.id LIMIT ${safeLimit}
+  `);
   for (const row of requestRows) {
     const result = await client.get(String(row.object_key));
     const buffer = Buffer.isBuffer(result.content) ? result.content : Buffer.from(result.content as Uint8Array);
