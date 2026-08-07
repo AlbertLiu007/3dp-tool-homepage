@@ -288,6 +288,7 @@ type GiftModel = {
   modelAssetId?: number | null;
   previewModelAssetId?: number | null;
   previewAssetId?: number | null;
+  previewAssetIds?: number[];
   previewUrls?: string[];
   modelUrl?: string;
   modelType?: GeneratedGiftModel['modelType'];
@@ -2008,7 +2009,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
     let active = true;
     setCatalogLoading(true); setCatalogError('');
     fetch('/api/gift/catalog', { cache: 'no-store', credentials: 'same-origin' }).then(async (response) => {
-      const result = await response.json() as { models?: { id: number; slug: string; titleZh: string; titleEn: string | null; descriptionZh: string | null; descriptionEn: string | null; category: string; categoryNameZh: string; categoryNameEn: string | null; useCase: string | null; supportedFinishes: string[]; previewAssetId: number | null; previewModelAssetId: number | null; modelAssetId: number | null; modelFormat: string | null }[]; categories?: { slug: string; nameZh: string; nameEn: string | null }[]; message?: string };
+    const result = await response.json() as { models?: { id: number; slug: string; titleZh: string; titleEn: string | null; descriptionZh: string | null; descriptionEn: string | null; category: string; categoryNameZh: string; categoryNameEn: string | null; useCase: string | null; supportedFinishes: string[]; previewAssetId: number | null; previewAssetIds?: number[]; previewModelAssetId: number | null; modelAssetId: number | null; modelFormat: string | null }[]; categories?: { slug: string; nameZh: string; nameEn: string | null }[]; message?: string };
       if (!response.ok) throw new Error(result.message || '礼品库加载失败');
       if (!active) return;
       const categories = result.categories || [];
@@ -2024,7 +2025,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
           finishLabel: paint && bronze ? (language === 'zh' ? '单色喷漆 / 铜做旧' : 'Paint / antique bronze') : bronze ? (language === 'zh' ? '铜做旧' : 'Antique bronze') : (language === 'zh' ? '单色喷漆' : 'Monochrome paint'),
           finish: paint && bronze ? 'both' : bronze ? 'bronze' : 'paint',
           color: ['from-[#083f7e] to-[#22d3ee]', 'from-[#7c3f15] to-[#d6a15f]', 'from-[#164e63] to-[#38bdf8]'][index % 3],
-          accent: model.slug.slice(0, 4).toUpperCase(), previewAssetId: model.previewAssetId, previewModelAssetId: model.previewModelAssetId, modelAssetId: model.modelAssetId,
+          accent: model.slug.slice(0, 4).toUpperCase(), previewAssetId: model.previewAssetId, previewUrls: (model.previewAssetIds?.length ? model.previewAssetIds : model.previewAssetId ? [model.previewAssetId] : []).map((assetId) => `/api/gift/assets/${assetId}`), previewModelAssetId: model.previewModelAssetId, modelAssetId: model.modelAssetId,
           modelUrl: model.modelAssetId ? `/api/gift/assets/${model.modelAssetId}` : undefined,
           previewModelUrl: model.previewModelAssetId ? `/api/gift/assets/${model.previewModelAssetId}` : undefined,
           previewModelType: model.previewModelAssetId ? 'glb' : undefined,

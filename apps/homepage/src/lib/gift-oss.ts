@@ -589,6 +589,7 @@ export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: num
   const region = process.env.GIFT_OSS_REGION?.trim() || 'oss-cn-shanghai';
   const { client, sha256, buffer } = await uploadObject(file, objectKey, descriptor.kind === 'model_preview' ? 'private, max-age=86400' : 'private, no-store');
   const connection = await databasePool().getConnection();
+  const linkRole = descriptor.kind === 'model_preview' ? 'main_image' : 'model_file';
   let uploaded: { assetId: number; kind: 'model_file' | 'model_preview'; filename: string; size: number; version: number } | null = null;
   try {
     await connection.beginTransaction();
@@ -598,13 +599,15 @@ export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: num
         original_filename, content_type, file_extension, size_bytes, sha256, visibility, metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'internal', ?)
     `, [actor.id, descriptor.kind, region, bucket, objectKey, createHash('sha256').update(objectKey).digest('hex'), file.name.slice(0, 255), file.type || null, descriptor.extension, file.size, sha256, JSON.stringify({ uploadedFrom: 'ops', modelId })]);
-    const [versionRows] = await connection.execute<RowDataPacket[]>('SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM gift_model_asset_links WHERE model_id = ? AND asset_role = ?', [modelId, descriptor.kind]);
+    const [versionRows] = await connection.execute<RowDataPacket[]>('SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM gift_model_asset_links WHERE model_id = ? AND asset_role = ?', [modelId, linkRole]);
     const version = Number(versionRows[0]?.next_version || 1);
-    await connection.execute<ResultSetHeader>('UPDATE gift_model_asset_links SET is_current = 0 WHERE model_id = ? AND asset_role = ?', [modelId, descriptor.kind]);
+    if (linkRole === 'model_file') {
+      await connection.execute<ResultSetHeader>('UPDATE gift_model_asset_links SET is_current = 0 WHERE model_id = ? AND asset_role = ?', [modelId, linkRole]);
+    }
     await connection.execute<ResultSetHeader>(`
       INSERT INTO gift_model_asset_links (model_id, asset_id, asset_role, version_number, is_current, uploaded_by_employee_id)
       VALUES (?, ?, ?, ?, 1, ?)
-    `, [modelId, result.insertId, descriptor.kind, version, actor.id]);
+    `, [modelId, result.insertId, linkRole, version, actor.id]);
     await connection.execute<ResultSetHeader>(`
       UPDATE gift_models SET ${descriptor.kind === 'model_preview' ? 'preview_asset_id' : 'model_asset_id'} = ?,
         model_format = IF(? = 'model_file', ?, model_format),
@@ -767,6 +770,7 @@ export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId
     `, [modelId, assetId]);
     const current = rows[0];
     if (!current) throw new GiftAccessError('Model asset was not found.', 404, 'not_found');
+    if (current.asset_role === 'model_preview_3d') throw new GiftAccessError('The preview model is generated automatically and cannot be edited or deleted.', 409, 'validation');
     if (current.publication_status === 'published' && current.is_current) throw new GiftAccessError('Replace the current file or archive the model before deleting it.', 409, 'validation');
     objectKey = String(current.object_key);
     title = String(current.title_zh);
@@ -779,7 +783,7 @@ export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId
       `, [modelId, current.asset_role]);
       const replacementId = previousRows[0]?.asset_id || null;
       if (replacementId) await connection.execute<ResultSetHeader>('UPDATE gift_model_asset_links SET is_current = 1 WHERE asset_id = ?', [replacementId]);
-      const pointer = current.asset_role === 'model_preview' ? 'preview_asset_id' : current.asset_role === 'model_preview_3d' ? 'preview_model_asset_id' : 'model_asset_id';
+      const pointer = current.asset_role === 'main_image' ? 'preview_asset_id' : current.asset_role === 'model_preview_3d' ? 'preview_model_asset_id' : 'model_asset_id';
       await connection.execute<ResultSetHeader>(`UPDATE gift_models SET ${pointer} = ? WHERE id = ?`, [replacementId, modelId]);
     }
     await connection.commit();

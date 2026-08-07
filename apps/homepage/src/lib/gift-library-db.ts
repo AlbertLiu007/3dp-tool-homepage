@@ -75,14 +75,27 @@ export async function listPublishedGiftModels(session: GiftSession) {
     FROM gift_models m
     INNER JOIN gift_model_categories c ON c.slug = m.category AND c.category_status = 'active'
     WHERE m.publication_status = 'published'
-    ORDER BY c.sort_order, m.updated_at DESC
+    ORDER BY m.sort_order ASC, c.sort_order, m.updated_at DESC, m.id ASC
   `);
+  const modelIds = rows.map((row) => Number(row.id));
+  const [imageRows] = modelIds.length ? await databasePool().query<RowDataPacket[]>(`
+    SELECT l.model_id, l.asset_id
+    FROM gift_model_asset_links l
+    INNER JOIN gift_assets a ON a.id = l.asset_id AND a.asset_status = 'active'
+    WHERE l.model_id IN (${modelIds.map(() => '?').join(',')}) AND l.asset_role = 'main_image'
+    ORDER BY l.model_id, l.version_number DESC
+  `, modelIds) : [[]];
+  const imageIdsByModel = new Map<number, number[]>();
+  for (const image of imageRows) {
+    const id = Number(image.model_id);
+    imageIdsByModel.set(id, [...(imageIdsByModel.get(id) || []), Number(image.asset_id)]);
+  }
   const [categoryRows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT slug, name_zh, name_en, description_zh, description_en
     FROM gift_model_categories WHERE category_status = 'active' ORDER BY sort_order, id
   `);
   return {
-    models: rows.map(normalizeModel),
+    models: rows.map((row) => ({ ...normalizeModel(row), previewAssetIds: imageIdsByModel.get(Number(row.id)) || [] })),
     categories: categoryRows.map((row) => ({
       slug: String(row.slug), nameZh: String(row.name_zh), nameEn: row.name_en ? String(row.name_en) : null,
       descriptionZh: row.description_zh ? String(row.description_zh) : null,

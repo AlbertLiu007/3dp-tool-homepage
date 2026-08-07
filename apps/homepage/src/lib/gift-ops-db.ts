@@ -199,7 +199,7 @@ export async function listGiftOpsModels(search?: string) {
     FROM gift_models m
     LEFT JOIN gift_employees owner ON owner.id = m.owner_employee_id
     LEFT JOIN gift_employees creator ON creator.id = m.created_by_employee_id
-    ${where} ORDER BY m.updated_at DESC LIMIT 500
+    ${where} ORDER BY m.sort_order ASC, m.updated_at DESC, m.id ASC LIMIT 500
   `, parameters);
   const modelIds = rows.map((row) => Number(row.id));
   const assetRows = modelIds.length ? await databasePool().query<RowDataPacket[]>(`
@@ -301,10 +301,10 @@ export async function createGiftOpsModel(actor: GiftEmployeeAccess, input: Recor
   const [result] = await databasePool().execute<ResultSetHeader>(`
     INSERT INTO gift_models (
       slug, source_type, title_zh, title_en, description_zh, description_en, category, use_case,
-      tags, supported_finishes, publication_status, created_by_employee_id,
+      tags, supported_finishes, publication_status, sort_order, created_by_employee_id,
       approved_by_employee_id, approved_at
-    ) VALUES (?, 'catalog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [slug, title, stringOrNull(input.titleEn), stringOrNull(input.descriptionZh), stringOrNull(input.descriptionEn), category, stringOrNull(input.useCase), JSON.stringify(tags), JSON.stringify(finishes), status, actor.id, status === 'published' ? actor.id : null, status === 'published' ? new Date() : null]);
+    ) VALUES (?, 'catalog', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [slug, title, stringOrNull(input.titleEn), stringOrNull(input.descriptionZh), stringOrNull(input.descriptionEn), category, Number.isInteger(input.sortOrder) ? Number(input.sortOrder) : 0, stringOrNull(input.useCase), JSON.stringify(tags), JSON.stringify(finishes), status, actor.id, status === 'published' ? actor.id : null, status === 'published' ? new Date() : null]);
   await recordGiftOpsAudit({ actorId: actor.id, action: 'model_created', entityType: 'model', entityId: result.insertId, summary: `${actor.name} 创建了模型 ${title}`, payload: { slug, status }, requestIp: ip });
   return { id: Number(result.insertId) };
 }
@@ -325,7 +325,7 @@ export async function updateGiftOpsModel(actor: GiftEmployeeAccess, modelId: num
     throw new GiftAccessError('A model file and preview are required before publishing.', 409, 'validation');
   }
   await databasePool().execute<ResultSetHeader>(`
-    UPDATE gift_models SET title_zh = ?, title_en = ?, description_zh = ?, description_en = ?, category = ?, use_case = ?,
+    UPDATE gift_models SET title_zh = ?, title_en = ?, description_zh = ?, description_en = ?, category = ?, sort_order = ?, use_case = ?,
       tags = ?, supported_finishes = ?, publication_status = ?,
       approved_by_employee_id = IF(? = 'published', ?, approved_by_employee_id),
       approved_at = IF(? = 'published', COALESCE(approved_at, CURRENT_TIMESTAMP(3)), approved_at)
@@ -336,6 +336,7 @@ export async function updateGiftOpsModel(actor: GiftEmployeeAccess, modelId: num
     input.descriptionZh === undefined ? current.description_zh : stringOrNull(input.descriptionZh),
     input.descriptionEn === undefined ? current.description_en : stringOrNull(input.descriptionEn),
     category,
+    Number.isInteger(input.sortOrder) ? Number(input.sortOrder) : current.sort_order,
     input.useCase === undefined ? current.use_case : stringOrNull(input.useCase),
     JSON.stringify(Array.isArray(input.tags) ? input.tags : parseJson(current.tags, [])),
     JSON.stringify(Array.isArray(input.supportedFinishes) ? input.supportedFinishes : parseJson(current.supported_finishes, [])),
