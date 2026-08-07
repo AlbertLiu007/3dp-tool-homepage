@@ -2014,7 +2014,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
       if (!active) return;
       const categories = result.categories || [];
       setCatalogCategories(categories.some((item) => item.slug === 'culture') ? categories : [{ slug: 'culture', nameZh: '文化礼赠', nameEn: 'Cultural gift' }, ...categories]);
-      const catalogModels: GiftModel[] = (result.models || []).filter((model) => model.slug !== 'uphill-tiger').map((model, index) => {
+      const catalogModels: GiftModel[] = (result.models || []).map((model, index) => {
         const paint = model.supportedFinishes.includes('paint');
         const bronze = model.supportedFinishes.includes('bronze');
         return {
@@ -2032,7 +2032,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
           modelType: ['stl', 'glb', 'gltf'].includes(model.modelFormat || '') ? model.modelFormat as GeneratedGiftModel['modelType'] : 'stl',
         };
       });
-      setModels([...featuredGiftModels(language), ...catalogModels]);
+      setModels(catalogModels.length ? catalogModels : featuredGiftModels(language));
     }).catch((loadError) => { if (active) setCatalogError(loadError instanceof Error ? loadError.message : '礼品库加载失败'); }).finally(() => { if (active) setCatalogLoading(false); });
     return () => { active = false; };
   }, [language]);
