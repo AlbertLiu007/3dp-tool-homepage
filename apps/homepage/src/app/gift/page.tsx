@@ -1259,6 +1259,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [previewRender, setPreviewRender] = useState<{ url: string; index: number } | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
   const [pendingResumeModel, setPendingResumeModel] = useState(false);
+  const [pendingResumeBriefModel, setPendingResumeBriefModel] = useState(false);
   const notifiedDraftIdsRef = useRef(new Set<number>());
   const selectedProfileTags = profileLabels(language, profileSelections);
 
@@ -1329,6 +1330,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     let cancelled = false;
     const request = resumeDraft.request;
     const resumeAction = resumeDraft.action;
+    const savedSource = request.specifications && typeof request.specifications.source === 'string'
+      ? request.specifications.source
+      : null;
     const savedProfileTags = request.specifications && Array.isArray(request.specifications.profileTags)
       ? request.specifications.profileTags.filter((tag): tag is string => typeof tag === 'string')
       : [];
@@ -1345,6 +1349,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'render_image')
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'reference_image')
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'model_preview');
+    const isBriefDraft = savedSource === 'ai_brief'
+      || imageAsset?.assetKind === 'render_image'
+      || /^selected-gift-render\./i.test(imageAsset?.filename || '');
     const modelAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_file');
     const modelPreviewAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview');
     const modelPreview3dAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview_3d');
@@ -1368,6 +1375,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setAiError(null);
     setModelProgress(null);
     setPendingResumeModel(false);
+    setPendingResumeBriefModel(false);
     if (restoredModel) {
       setBriefModel(restoredModel);
       setImageModel(restoredModel);
@@ -1395,10 +1403,19 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         setImagePreparationFailed(false);
         setImagePreparing(false);
         setImagePreparationNotice(labels.imagePrepared);
-        if (resumeAction === 'model') {
+        if (resumeAction === 'model' && isBriefDraft) {
+          setMode('brief');
+          setBriefDraftRequestId(request.id);
+          const restoredImage = { assetId: imageAsset.assetId, url: `/api/gift/assets/${imageAsset.assetId}` };
+          setRenderImages([restoredImage]);
+          setRenderSlots([{ status: 'ready', image: restoredImage, percent: 100, elapsedMs: 0 }]);
+          setSelectedRender(0);
+          setBriefStatus(restoredModel ? 'model-ready' : 'render-ready');
+          if (!restoredModel) setPendingResumeBriefModel(true);
+        } else if (resumeAction === 'model') {
           setMode('image');
           setPendingResumeModel(true);
-        } else if (imageAsset.assetKind === 'reference_image') {
+        } else if (!isBriefDraft) {
           setMode('image');
         } else {
           setMode('brief');
@@ -1645,6 +1662,12 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setPendingResumeModel(false);
     void generateImageModel();
   }, [pendingResumeModel, imageFile, imageDraftRequestId, imageStatus]);
+
+  useEffect(() => {
+    if (!pendingResumeBriefModel || selectedRender === null || !briefDraftRequestId || briefStatus === 'generating-model') return;
+    setPendingResumeBriefModel(false);
+    void generateBriefModel();
+  }, [pendingResumeBriefModel, selectedRender, briefDraftRequestId, briefStatus]);
 
   function resetBriefResults() {
     setBriefStatus('idle');
