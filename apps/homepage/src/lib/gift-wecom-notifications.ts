@@ -168,8 +168,8 @@ export async function deliverPendingGiftWeComNotifications(limit = 5) {
       AND attempt_count < 5
       AND next_attempt_at <= CURRENT_TIMESTAMP(3)
     ORDER BY created_at
-    LIMIT ?
-  `, [safeLimit]);
+    LIMIT ${safeLimit}
+  `);
 
   for (const row of rows) {
     const [claim] = await databasePool().execute<ResultSetHeader>(`
