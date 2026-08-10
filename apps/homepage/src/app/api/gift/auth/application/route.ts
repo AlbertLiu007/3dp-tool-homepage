@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAccessError, submitGiftEmployeeApplication } from '@/lib/gift-db';
+import { queueGiftEmployeeApplicationNotification } from '@/lib/gift-wecom-notifications';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,6 +17,7 @@ export async function POST(request: NextRequest) {
     }
     const body = await request.json() as { reason?: unknown };
     const employee = await submitGiftEmployeeApplication(session, typeof body.reason === 'string' ? body.reason : '');
+    if (employee) await queueGiftEmployeeApplicationNotification(employee.id);
     return NextResponse.json({ employee }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (error instanceof GiftAccessError) return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });

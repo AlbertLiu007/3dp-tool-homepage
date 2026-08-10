@@ -441,6 +441,12 @@ export async function canAccessGiftAsset(employee: GiftEmployeeAccess, assetId: 
     WHERE a.id = ? AND a.asset_status = 'active' AND (
       EXISTS (SELECT 1 FROM gift_models m WHERE m.publication_status = 'published' AND (m.model_asset_id = a.id OR m.preview_asset_id = a.id OR m.preview_model_asset_id = a.id))
       OR EXISTS (
+        SELECT 1
+        FROM gift_model_asset_links l
+        INNER JOIN gift_models m ON m.id = l.model_id AND m.publication_status = 'published'
+        WHERE l.asset_id = a.id AND l.asset_role = 'main_image'
+      )
+      OR EXISTS (
         SELECT 1 FROM gift_request_attachments ra
         INNER JOIN gift_print_requests r ON r.id = ra.request_id
         WHERE ra.asset_id = a.id AND r.requester_employee_id = ? AND ra.visible_to_requester = 1

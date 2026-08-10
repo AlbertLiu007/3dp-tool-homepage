@@ -797,15 +797,46 @@ export async function deleteGiftOpsModelAsset(actor: GiftEmployeeAccess, modelId
   await recordGiftOpsAudit({ actorId: actor.id, action: 'model_asset_deleted', entityType: 'model', entityId: modelId, summary: `${actor.name} 删除了模型 ${title} 的文件`, payload: { assetId }, requestIp: ip }).catch(() => undefined);
 }
 
-export async function getGiftAssetUrl(assetId: number, disposition: 'inline' | 'attachment' = 'inline') {
-  const [rows] = await databasePool().execute<RowDataPacket[]>('SELECT bucket_name, object_key, original_filename FROM gift_assets WHERE id = ? AND asset_status = \'active\' LIMIT 1', [assetId]);
+export type GiftImageVariant = 'thumb' | 'card' | 'large' | 'original';
+
+const giftImageProcesses: Record<Exclude<GiftImageVariant, 'original'>, string> = {
+  thumb: 'image/resize,m_lfit,w_320,h_320/format,webp/quality,q_76',
+  card: 'image/resize,m_lfit,w_960,h_960/format,webp/quality,q_82',
+  large: 'image/resize,m_lfit,w_1600,h_1600/format,webp/quality,q_88',
+};
+
+export async function getGiftAssetUrl(
+  assetId: number,
+  disposition: 'inline' | 'attachment' = 'inline',
+  imageVariant: GiftImageVariant = 'card',
+) {
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT a.bucket_name, a.object_key, a.original_filename, a.content_type,
+      EXISTS (
+        SELECT 1
+        FROM gift_model_asset_links l
+        INNER JOIN gift_models m ON m.id = l.model_id AND m.publication_status = 'published'
+        WHERE l.asset_id = a.id AND l.asset_role = 'main_image'
+      ) AS published_catalog_image
+    FROM gift_assets a
+    WHERE a.id = ? AND a.asset_status = 'active'
+    LIMIT 1
+  `, [assetId]);
   const asset = rows[0];
   if (!asset) throw new GiftAccessError('Asset was not found.', 404, 'not_found');
   if (String(asset.bucket_name) !== required('GIFT_OSS_BUCKET')) throw new GiftAccessError('Asset bucket is not configured for this service.', 409, 'configuration');
   // Browser requests arrive from outside the ECS VPC. Sign public OSS URLs for
   // display/download; uploads and server-side reads continue using the internal endpoint.
   const client = await ossClient({ internal: false });
-  return client.signatureUrl(String(asset.object_key), { expires: 300, response: { 'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(String(asset.original_filename || 'unionam-asset'))}` } });
+  const optimizedImage = disposition === 'inline'
+    && String(asset.content_type || '').startsWith('image/')
+    && imageVariant !== 'original';
+  const expires = asset.published_catalog_image ? 24 * 60 * 60 : 10 * 60;
+  return client.signatureUrl(String(asset.object_key), {
+    expires,
+    ...(optimizedImage ? { process: giftImageProcesses[imageVariant] } : {}),
+    response: { 'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(String(asset.original_filename || 'unionam-asset'))}` },
+  });
 }
 
 export const getGiftOpsAssetUrl = getGiftAssetUrl;

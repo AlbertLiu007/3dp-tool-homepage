@@ -3,6 +3,12 @@ type WeComApiResponse = {
   errmsg?: string;
 };
 
+type WeComMessageResponse = WeComApiResponse & {
+  invaliduser?: string;
+  invalidparty?: string;
+  invalidtag?: string;
+};
+
 type WeComTokenResponse = WeComApiResponse & {
   access_token?: string;
   expires_in?: number;
@@ -91,6 +97,51 @@ async function getAccessToken(corpId: string, appSecret: string) {
 
   if (!payload.access_token) throw new WeComAuthError('WeCom did not return an access token.', 'upstream');
   return payload.access_token;
+}
+
+export async function sendWeComApplicationNews(input: {
+  userIds: string[];
+  title: string;
+  description: string;
+  url: string;
+}) {
+  const configuration = getWeComConfiguration();
+  const userIds = [...new Set(input.userIds.map((userId) => userId.trim()).filter(Boolean))];
+  if (!userIds.length) throw new WeComAuthError('No WeCom notification recipient is configured.', 'configuration');
+
+  const agentId = Number(configuration.agentId);
+  if (!Number.isInteger(agentId) || agentId <= 0) {
+    throw new WeComAuthError('WECOM_AGENT_ID is invalid.', 'configuration');
+  }
+
+  const accessToken = await getAccessToken(configuration.corpId, configuration.appSecret);
+  const url = new URL('https://qyapi.weixin.qq.com/cgi-bin/message/send');
+  url.searchParams.set('access_token', accessToken);
+  const response = await fetch(url, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      touser: userIds.join('|'),
+      msgtype: 'news',
+      agentid: agentId,
+      news: {
+        articles: [{
+          title: input.title.slice(0, 128),
+          description: input.description.slice(0, 512),
+          url: input.url,
+        }],
+      },
+    }),
+  });
+
+  if (!response.ok) throw new WeComAuthError(`WeCom message request failed with HTTP ${response.status}.`, 'upstream');
+  const payload = await response.json() as WeComMessageResponse;
+  if (payload.errcode !== 0) {
+    const invalid = [payload.invaliduser, payload.invalidparty, payload.invalidtag].filter(Boolean).join('; ');
+    throw new WeComAuthError(`WeCom message API error ${payload.errcode}: ${payload.errmsg ?? 'unknown error'}${invalid ? ` (${invalid})` : ''}.`, 'upstream');
+  }
+  return payload;
 }
 
 export function buildWeComQrLoginUrl(state: string, language: 'zh' | 'en' = 'zh') {

@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS gift_notification_outbox (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  notification_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  notification_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL,
+  request_id BIGINT UNSIGNED NOT NULL,
+  recipient_user_ids JSON NOT NULL,
+  payload JSON NOT NULL,
+  status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL DEFAULT 'pending',
+  attempt_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  next_attempt_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  last_error TEXT NULL,
+  sent_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_gift_notification_key (notification_key),
+  KEY idx_gift_notification_delivery (status, next_attempt_at, created_at),
+  CONSTRAINT fk_gift_notification_request FOREIGN KEY (request_id) REFERENCES gift_print_requests (id) ON DELETE CASCADE,
+  CONSTRAINT chk_gift_notification_status CHECK (status IN ('pending', 'sending', 'sent', 'failed'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
