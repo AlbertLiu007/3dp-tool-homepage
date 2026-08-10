@@ -153,7 +153,8 @@ const requestSelect = `
       FROM gift_request_attachments ra
       INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
       WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.content_type LIKE 'image/%'
-      ORDER BY (a.asset_kind = 'model_preview') DESC, (a.asset_kind = 'render_image') DESC, ra.created_at DESC
+      ORDER BY (a.asset_kind = 'reference_image' AND a.original_filename LIKE 'selected-gift-render.%') DESC,
+        (a.asset_kind = 'render_image') DESC, (a.asset_kind = 'model_preview') DESC, ra.created_at DESC
       LIMIT 1
     ) AS thumbnail_asset_id,
     (
@@ -161,7 +162,8 @@ const requestSelect = `
       FROM gift_request_attachments ra
       INNER JOIN gift_assets a ON a.id = ra.asset_id AND a.asset_status = 'active'
       WHERE ra.request_id = r.id AND ra.visible_to_requester = 1 AND a.content_type LIKE 'image/%'
-      ORDER BY (a.asset_kind = 'model_preview') DESC, (a.asset_kind = 'render_image') DESC, ra.created_at DESC
+      ORDER BY (a.asset_kind = 'reference_image' AND a.original_filename LIKE 'selected-gift-render.%') DESC,
+        (a.asset_kind = 'render_image') DESC, (a.asset_kind = 'model_preview') DESC, ra.created_at DESC
       LIMIT 1
     ) AS thumbnail_content_type,
     (

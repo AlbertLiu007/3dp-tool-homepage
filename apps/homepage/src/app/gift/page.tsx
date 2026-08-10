@@ -1340,7 +1340,11 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
     setProfileSelections(restoredProfileSelections);
     setBrief(request.requestNotes || buildGiftBrief(language, restoredProfileSelections));
-    const imageAsset = [...resumeDraft.attachments].reverse().find((file) => file.contentType?.startsWith('image/') && ['render_image', 'reference_image', 'model_preview'].includes(file.assetKind));
+    const imageAttachments = [...resumeDraft.attachments].filter((file) => file.contentType?.startsWith('image/'));
+    const imageAsset = [...imageAttachments].reverse().find((file) => file.assetKind === 'reference_image' && /^selected-gift-render\./i.test(file.filename))
+      || [...imageAttachments].reverse().find((file) => file.assetKind === 'render_image')
+      || [...imageAttachments].reverse().find((file) => file.assetKind === 'reference_image')
+      || [...imageAttachments].reverse().find((file) => file.assetKind === 'model_preview');
     const modelAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_file');
     const modelPreviewAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview');
     const modelPreview3dAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview_3d');
