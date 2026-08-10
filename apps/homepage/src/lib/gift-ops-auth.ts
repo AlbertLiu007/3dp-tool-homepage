@@ -43,9 +43,11 @@ function safeEqual(left: string, right: string) {
 function enforceOrigin(request: NextRequest) {
   const origin = request.headers.get('origin');
   if (!origin) throw new GiftAccessError('Origin header is required.', 403, 'forbidden');
-  const allowed = new Set<string>();
+  const allowed = new Set<string>([
+    (process.env.GIFT_OPS_ORIGIN?.trim() || 'https://ops.unionam.com').replace(/\/+$/, ''),
+    (process.env.UNIONAM_PUBLIC_ORIGIN?.trim() || 'https://unionam.com').replace(/\/+$/, ''),
+  ]);
   if (process.env.NODE_ENV !== 'production') allowed.add('http://localhost:3000');
-  allowed.add((process.env.GIFT_OPS_ORIGIN?.trim() || 'https://ops.unionam.com').replace(/\/+$/, ''));
   if (!allowed.has(origin.replace(/\/+$/, ''))) throw new GiftAccessError('The request origin is not allowed.', 403, 'forbidden');
 }
 
