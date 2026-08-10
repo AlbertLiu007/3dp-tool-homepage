@@ -1229,8 +1229,11 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [profileSelections, setProfileSelections] = useState<ProfileSelections>(() => ({ ...emptyProfileSelections }));
   const [openProfileGroup, setOpenProfileGroup] = useState<ProfileGroupId | null>(null);
   const profileMenusRef = useRef<HTMLDivElement>(null);
+  const profileStepRef = useRef<HTMLDivElement>(null);
+  const briefStepRef = useRef<HTMLDivElement>(null);
+  const surfaceStepRef = useRef<HTMLDivElement>(null);
   const [finish, setFinish] = useState<FinishMode>('paint');
-  const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId>('bronze');
+  const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId | null>(null);
   const [paintColor, setPaintColor] = useState('#FFFFFF');
   const [paintColorInput, setPaintColorInput] = useState('#FFFFFF');
   const customColorInputRef = useRef<HTMLInputElement>(null);
@@ -1698,8 +1701,13 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }, 0);
   }
 
+  function scrollToWorkflowStep(step: 'profile' | 'brief' | 'surface') {
+    const target = step === 'profile' ? profileStepRef.current : step === 'brief' ? briefStepRef.current : surfaceStepRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   async function generateRenders() {
-    if (!brief.trim() && selectedProfileTags.length === 0) return;
+    if ((!brief.trim() && selectedProfileTags.length === 0) || !surfaceEffect) return;
     clearAiError();
     const startedAt = Date.now();
     setBriefStatus('generating-render');
@@ -1781,7 +1789,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   async function editSelectedImage() {
     const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
     const source = giftImageSource(selectedImage);
-    if (!source || !editPrompt.trim()) return;
+    if (!source || !editPrompt.trim() || !surfaceEffect) return;
     clearAiError();
     setEditNotice(false);
     setEditError(null);
@@ -1847,6 +1855,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   }
 
   const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === surfaceEffect);
+  const surfaceSelectionEnabled = brief.trim().length > 0;
   const generatedModel: GiftModel = {
     id: 'ai-generated',
     name: language === 'zh' ? 'AI 客户专属礼品' : 'AI customer-specific gift',
@@ -1871,29 +1880,48 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
       <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" onClick={() => setMode('image')} className="flex items-start gap-4 bg-white p-5 text-left transition hover:bg-slate-50 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-500"><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" className="flex items-start gap-4 border-t border-slate-200 bg-blue-50/70 p-5 text-left shadow-[inset_0_-3px_0_#2563eb] md:border-l md:border-t-0 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#0b4f9c] text-white"><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
 
+      <nav aria-label={language === 'zh' ? '礼品设计进度' : 'Gift design progress'} className="border-b border-slate-100 bg-white px-5 py-3 md:px-8">
+        <div className="mx-auto max-w-full overflow-x-auto">
+          <div className="mx-auto flex w-max min-w-fit items-center justify-center px-1">
+            {[
+              { key: 'profile' as const, label: language === 'zh' ? '客户画像定位（可选）' : 'Customer profile (optional)', complete: selectedProfileTags.length > 0 },
+              { key: 'brief' as const, label: language === 'zh' ? '描述礼品创意' : 'Describe gift idea', complete: brief.trim().length > 0 },
+              { key: 'surface' as const, label: language === 'zh' ? '礼品表面效果' : 'Gift surface effect', complete: Boolean(surfaceEffect) },
+            ].map((step, index, steps) => <div key={step.key} className="flex shrink-0 items-center">
+              <button type="button" onClick={() => scrollToWorkflowStep(step.key)} className="group flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-slate-50">
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black transition ${step.complete ? 'bg-emerald-500 text-white' : 'bg-[#0b4f9c] text-white'}`}>{step.complete ? <Check className="h-4 w-4" strokeWidth={3} /> : index + 1}</span>
+                <span className={`truncate text-[11px] font-black transition md:text-xs ${step.complete ? 'text-emerald-700' : 'text-slate-700 group-hover:text-[#0b4f9c]'}`}>{step.label}</span>
+              </button>
+              {index < steps.length - 1 ? <span className={`mx-3 h-px w-8 md:mx-5 md:w-16 ${step.complete ? 'bg-emerald-300' : 'bg-slate-200'}`} aria-hidden="true" /> : null}
+            </div>)}
+          </div>
+        </div>
+      </nav>
+
       {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'approval' ? labels.aiApprovalError : aiError.reason === 'quota' ? labels.aiQuotaError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{!['validation', 'approval', 'quota'].includes(aiError.reason || '') && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
 
       <div className="p-5 md:p-8"><div className="mx-auto max-w-6xl space-y-5">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6">
+        <div ref={profileStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6">
           <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">1</span><div><h3 className="text-base font-black text-slate-950">{labels.profileTags}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.profileAutoHint}</p></div></div>
           <div ref={profileMenusRef} className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div>
           {selectedProfileTags.length ? <div className="mt-4 flex flex-wrap gap-2">{selectedProfileTags.map((tag) => <span key={tag} className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-bold text-[#0b4f9c]">{tag}</span>)}</div> : null}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+        <div ref={briefStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
           <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">2</span><div><h3 className="text-base font-black text-slate-950">{labels.customerBrief}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '客户标签会自动生成礼品创意，你可以在生成图片前继续编辑和补充。' : 'Customer tags create the gift idea automatically. Edit or expand it before generating images.'}</p></div></div>
           <textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={6} placeholder={labels.customerBriefPlaceholder} className="mt-5 w-full resize-y rounded-xl border border-slate-200 bg-slate-50/40 px-4 py-4 text-sm font-medium leading-7 text-slate-700 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-2 focus:ring-cyan-100" />
           <div className="mt-2 flex justify-between text-[11px] font-bold text-slate-400"><span>{briefAutoGenerated ? (language === 'zh' ? '已根据客户画像自动生成，可直接编辑' : 'Auto-generated from the profile and fully editable') : (language === 'zh' ? '手动编辑中' : 'Editing manually')}</span><span>{brief.length}/4000</span></div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+        <div ref={surfaceStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
           <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">3</span><div><h3 className="text-base font-black text-slate-950">{labels.surfaceEffect}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.surfaceEffectHint}</p></div></div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{surfaceEffectPresets.map((preset) => {
+          {!surfaceSelectionEnabled ? <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{language === 'zh' ? '请先完成礼品创意描述，再选择表面效果。' : 'Complete the gift idea description before choosing a surface effect.'}</p> : null}
+          <div className={`mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${!surfaceSelectionEnabled ? 'opacity-55' : ''}`}>{surfaceEffectPresets.map((preset) => {
             const active = surfaceEffect === preset.id;
             const isCustom = preset.id === 'custom';
             const cardClassName = `min-h-24 rounded-xl border p-4 text-left transition ${active ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm'}`;
             if (isCustom) return <div key={preset.id} ref={surfaceCustomMenuRef} className="relative">
-              <button type="button" onClick={() => chooseSurfaceEffect('custom')} className={`w-full ${cardClassName}`}>
+              <button type="button" disabled={!surfaceSelectionEnabled} onClick={() => chooseSurfaceEffect('custom')} className={`w-full ${cardClassName} disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:border-slate-200 disabled:hover:shadow-none`}>
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: active ? paintColor : preset.hex }} />{`${labels.surfaceCustom}：${active ? paintColor : preset.hex}`}</span>
                   {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}
@@ -1907,9 +1935,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
                 <div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={/^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={language === 'zh' ? '取色器' : 'Color picker'} />{language === 'zh' ? '取色器' : 'Picker'}</label><span className="text-[10px] font-bold text-slate-400">HEX · #RRGGBB</span><button type="button" disabled={!/^#[0-9A-F]{6}$/.test(paintColorInput)} onClick={() => { choosePaintColor(paintColorInput); setPaintMenuOpen(false); }} className="h-8 rounded-md bg-[#0b4f9c] px-3 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{language === 'zh' ? '确定' : 'Apply'}</button></div>
               </div> : null}
             </div>;
-            return <button key={preset.id} type="button" onClick={() => chooseSurfaceEffect(preset.id)} className={cardClassName}><div className="flex items-center justify-between gap-3"><span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: preset.hex }} />{labels[preset.label]}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>;
+            return <button key={preset.id} type="button" disabled={!surfaceSelectionEnabled} onClick={() => chooseSurfaceEffect(preset.id)} className={`${cardClassName} disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:border-slate-200 disabled:hover:shadow-none`}><div className="flex items-center justify-between gap-3"><span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: preset.hex }} />{labels[preset.label]}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>;
           })}</div>
-          <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div>
+          <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || !surfaceEffect || briefStatus === 'generating-render'} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div>
         </div>
 
         {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} language={language} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); setEditNotice(false); }} onPreview={() => slot.image && setPreviewRender({ url: giftImageSource(slot.image), index })} labels={labels} />)}</div>
