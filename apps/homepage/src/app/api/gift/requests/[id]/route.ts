@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeGiftRequest, giftApiError } from '@/lib/gift-api';
 import { cancelMyGiftPrintRequest, getMyGiftPrintRequestDetail, submitGiftAiDraft } from '@/lib/gift-library-db';
 import { deleteGiftDraft } from '@/lib/gift-oss';
+import { queueGiftRequestSubmittedNotification } from '@/lib/gift-wecom-notifications';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,6 +31,7 @@ export async function PATCH(request: NextRequest, context: { params: { id: strin
     }
     if (body.action === 'submit') {
       const result = await submitGiftAiDraft(session, Number(context.params.id), body);
+      await queueGiftRequestSubmittedNotification(result.id);
       return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json({ error: 'validation', message: 'Unsupported request action.' }, { status: 400 });

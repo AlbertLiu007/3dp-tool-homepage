@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeGiftRequest, giftApiError } from '@/lib/gift-api';
 import { isLocalGiftDevelopmentSession } from '@/lib/gift-db';
 import { createGiftPrintRequest, listMyGiftPrintRequests } from '@/lib/gift-library-db';
+import { queueGiftRequestSubmittedNotification } from '@/lib/gift-wecom-notifications';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
   try {
     const { session } = await authorizeGiftRequest(request, true);
     const result = await createGiftPrintRequest(session, await request.json() as Record<string, unknown>);
+    await queueGiftRequestSubmittedNotification(result.id);
     return NextResponse.json(result, { status: 201, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftApiError(error, 'Unable to create print request.');
