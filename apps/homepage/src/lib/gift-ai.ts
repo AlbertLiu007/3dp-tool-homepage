@@ -1,4 +1,5 @@
 import { ensureServerStl } from '@/lib/model/server-glb-to-stl';
+import { createTransparentPng, createWhiteMattePng } from '@/lib/image-transparency';
 
 type ImageApiItem = {
   b64_json?: string;
@@ -8,6 +9,13 @@ type ImageApiItem = {
 type ImageApiResponse = {
   data?: ImageApiItem[];
   error?: { message?: string };
+};
+
+type AsyncImageTask = {
+  id?: string;
+  status?: string;
+  content_url?: string;
+  error?: { message?: string } | string | null;
 };
 
 type TripoEnvelope<T> = {
@@ -32,6 +40,9 @@ type TripoTask = {
 export type GeneratedGiftImage = {
   dataUrl?: string;
   url?: string;
+  model?: string;
+  transparentBackground?: boolean;
+  transparentBackgroundProcessor?: string;
 };
 
 export type WhiteModelJob = {
@@ -68,10 +79,14 @@ function normalizedBaseUrl(value: string) {
 }
 
 const TRANSIENT_UPSTREAM_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const ASYNC_IMAGE_POLL_INTERVAL_MS = 2_000;
+const ASYNC_IMAGE_POLL_TIMEOUT_MS = 180_000;
+const PRINTABILITY_CONSTRAINT = 'Printable geometry requirements: create one complete watertight closed single-shell solid object. Every component must be physically joined to the main body and self-supporting; no floating, suspended, disconnected, intersecting, open, hollow-without-wall, paper-thin, or fragile parts. Use manufacturable thickness and a stable integrated base suitable for resin 3D printing. Do not render any cast shadow, contact shadow, floor shadow, model shadow, or detached shadow; use even neutral studio lighting on a fully transparent background.';
 
 export const IMAGE_GENERATION_MODEL = 'grok-imagine-image';
 export const IMAGE_EDIT_MODEL = 'grok-imagine-image-quality';
-export const IMAGE_FALLBACK_MODEL = 'wan2.7-image';
+export const IMAGE_FALLBACK_MODEL = 'gpt-image-2';
 export const IMAGE_DOMESTIC_BASE_URL = 'https://api.cdn-krill-ai.com/v1';
 export const IMAGE_FALLBACK_BASE_URL = 'https://api.krill-ai.net/v1';
 
@@ -92,8 +107,7 @@ function retryDelay(response: Response | undefined, attempt: number) {
   return 700 * (2 ** attempt);
 }
 
-async function fetchImageProvider(input: string, initFactory: () => RequestInit) {
-  const maxAttempts = 3;
+async function fetchImageProvider(input: string, initFactory: () => RequestInit, maxAttempts = 3) {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     let response: Response | undefined;
@@ -136,7 +150,9 @@ function imageModels(operation: ImageOperation) {
     primary: operation === 'generation'
       ? process.env.GPT_IMAGE_GENERATION_MODEL?.trim() || IMAGE_GENERATION_MODEL
       : process.env.GPT_IMAGE_EDIT_MODEL?.trim() || IMAGE_EDIT_MODEL,
-    fallback: process.env.GPT_IMAGE_FALLBACK_MODEL?.trim() || IMAGE_FALLBACK_MODEL,
+    // Keep the fallback deliberately fixed. An old environment override must not
+    // reintroduce the retired Wan models or cause an unexpected paid route.
+    fallback: IMAGE_FALLBACK_MODEL,
   };
 }
 
@@ -211,9 +227,23 @@ async function readTripoResponse<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-async function normalizeImage(payload: ImageApiResponse, apiKey: string): Promise<GeneratedGiftImage> {
+async function normalizedImageBuffer(buffer: Buffer, model: string): Promise<GeneratedGiftImage> {
+  try {
+    const png = await createTransparentPng(buffer, MAX_IMAGE_BYTES);
+    return {
+      dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+      model,
+      transparentBackground: true,
+      transparentBackgroundProcessor: 'sharp-edge-flood-fill-v2',
+    };
+  } catch (error) {
+    throw new GiftAiError(error instanceof Error ? error.message : 'Image provider returned an unreadable image.');
+  }
+}
+
+async function normalizeImage(payload: ImageApiResponse, apiKey: string, model: string): Promise<GeneratedGiftImage> {
   const image = payload.data?.[0];
-  if (image?.b64_json) return { dataUrl: `data:image/png;base64,${image.b64_json}` };
+  if (image?.b64_json) return normalizedImageBuffer(Buffer.from(image.b64_json, 'base64'), model);
   if (image?.url) {
     let response: Response;
     try {
@@ -230,11 +260,101 @@ async function normalizeImage(payload: ImageApiResponse, apiKey: string): Promis
     if (!response.ok) throw new GiftAiError('Image provider returned an unreadable image URL.');
     const contentType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
     if (!contentType.startsWith('image/')) throw new GiftAiError('Image provider URL did not return an image.');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.byteLength > 15 * 1024 * 1024) throw new GiftAiError('Generated image exceeds the 15MB safety limit.');
-    return { dataUrl: `data:${contentType};base64,${buffer.toString('base64')}` };
+    return normalizedImageBuffer(Buffer.from(await response.arrayBuffer()), model);
   }
   throw new GiftAiError(payload.error?.message || 'Image provider did not return an image.');
+}
+
+function asyncTaskError(task: AsyncImageTask) {
+  return typeof task.error === 'string' ? task.error : task.error?.message;
+}
+
+async function requestAsyncEditedImage(
+  baseUrl: string,
+  model: string,
+  configuration: ReturnType<typeof imageConfiguration>,
+  input: { image: File; mask?: File; prompt: string },
+) {
+  let creationResponse: Response;
+  try {
+    const formData = new FormData();
+    formData.set('model', model);
+    formData.set('prompt', `${input.prompt}\n${PRINTABILITY_CONSTRAINT}`);
+    formData.set('size', configuration.size);
+    formData.set('quality', configuration.quality);
+    formData.set('response_format', 'url');
+    formData.set('n', '1');
+    formData.set('async', 'true');
+    formData.append('image[]', input.image, input.image.name || 'gift-render.png');
+    if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
+    creationResponse = await fetch(`${baseUrl}/images/edits`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${configuration.apiKey}`,
+        Accept: 'application/json',
+      },
+      body: formData,
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (error) {
+    // A timed-out POST may already have created a billable task. Do not submit
+    // another model request when task acceptance is ambiguous.
+    throw new GiftAiError(
+      error instanceof Error ? `Image edit task submission failed: ${error.message}` : 'Image edit task submission failed.',
+    );
+  }
+
+  const created = await readImageResponse<AsyncImageTask>(creationResponse);
+  if (!created.id) throw new GiftAiError(asyncTaskError(created) || 'Image provider did not return an asynchronous task ID.');
+  const taskId = created.id;
+  const deadline = Date.now() + ASYNC_IMAGE_POLL_TIMEOUT_MS;
+
+  try {
+    let task = created;
+    while (Date.now() < deadline) {
+      const status = task.status?.toLowerCase();
+      if (status === 'completed' || status === 'succeeded' || status === 'success') {
+        const contentUrl = task.content_url
+          ? new URL(task.content_url, `${baseUrl}/`).toString()
+          : `${baseUrl}/images/${encodeURIComponent(taskId)}/content`;
+        const contentResponse = await fetchImageProvider(contentUrl, () => ({
+          method: 'GET',
+          cache: 'no-store',
+          redirect: 'follow',
+          headers: {
+            Authorization: `Bearer ${configuration.apiKey}`,
+            Accept: 'image/*',
+          },
+          signal: AbortSignal.timeout(120_000),
+        }));
+        if (!contentResponse.ok) throw new GiftAiError(`Image result download failed with HTTP ${contentResponse.status}.`);
+        const contentType = contentResponse.headers.get('content-type')?.split(';')[0] || '';
+        if (!contentType.startsWith('image/')) throw new GiftAiError('Image result endpoint did not return an image.');
+        return normalizedImageBuffer(Buffer.from(await contentResponse.arrayBuffer()), model);
+      }
+      if (status === 'failed' || status === 'cancelled' || status === 'canceled' || status === 'error') {
+        throw new GiftAiError(asyncTaskError(task) || 'Image editing task failed.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, ASYNC_IMAGE_POLL_INTERVAL_MS));
+      const queryResponse = await fetchImageProvider(`${baseUrl}/images/${encodeURIComponent(taskId)}`, () => ({
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${configuration.apiKey}`,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(30_000),
+      }));
+      task = await readImageResponse<AsyncImageTask>(queryResponse);
+    }
+    throw new GiftAiError('Image editing task timed out before completion.', 504);
+  } catch (error) {
+    // The provider accepted this task. Never switch models after this point,
+    // otherwise one user action can create multiple paid editing tasks.
+    if (error instanceof GiftAiError && !(error instanceof ImageProviderUnavailableError)) throw error;
+    throw new GiftAiError(error instanceof Error ? error.message : 'Image editing task could not be completed.');
+  }
 }
 
 async function requestGeneratedImage(prompt: string) {
@@ -244,6 +364,9 @@ async function requestGeneratedImage(prompt: string) {
   for (const model of [models.primary, models.fallback].filter((value, index, values) => values.indexOf(value) === index)) {
     for (const baseUrl of imageProviderBaseUrls(configuration)) {
       try {
+        // Generation is a billable POST. Do not retry an ambiguous POST;
+        // move to the next configured model/route instead of risking a
+        // duplicate paid task.
         const response = await fetchImageProvider(`${baseUrl}/images/generations`, () => ({
           method: 'POST',
           cache: 'no-store',
@@ -254,14 +377,14 @@ async function requestGeneratedImage(prompt: string) {
           },
           body: JSON.stringify({
             model,
-            prompt,
+            prompt: `${prompt}\n${PRINTABILITY_CONSTRAINT}`,
             size: configuration.size,
             quality: configuration.quality,
             response_format: 'b64_json',
             n: 1,
           }),
-        }));
-        return await normalizeImage(await readImageResponse<ImageApiResponse>(response), configuration.apiKey);
+        }), 1);
+        return await normalizeImage(await readImageResponse<ImageApiResponse>(response), configuration.apiKey, model);
       } catch (error) {
         lastError = error;
         if (!canUseImageFallback(error)) throw error;
@@ -283,26 +406,7 @@ export async function editGiftImage(input: { image: File; mask?: File; prompt: s
   for (const model of [models.primary, models.fallback].filter((value, index, values) => values.indexOf(value) === index)) {
     for (const baseUrl of imageProviderBaseUrls(configuration)) {
       try {
-        const response = await fetchImageProvider(`${baseUrl}/images/edits`, () => {
-          const formData = new FormData();
-          formData.set('model', model);
-          formData.set('prompt', input.prompt);
-          formData.set('size', configuration.size);
-          formData.set('quality', configuration.quality);
-          formData.set('response_format', 'b64_json');
-          formData.append('image[]', input.image, input.image.name || 'gift-render.png');
-          if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
-          return {
-            method: 'POST',
-            cache: 'no-store',
-            headers: {
-              Authorization: `Bearer ${configuration.apiKey}`,
-              Accept: 'application/json',
-            },
-            body: formData,
-          };
-        });
-        return await normalizeImage(await readImageResponse<ImageApiResponse>(response), configuration.apiKey);
+        return await requestAsyncEditedImage(baseUrl, model, configuration, input);
       } catch (error) {
         lastError = error;
         if (!canUseImageFallback(error)) throw error;
@@ -350,8 +454,9 @@ async function queryTripoTask(taskId: string) {
 
 export async function submitWhiteModel(image: File): Promise<WhiteModelJob> {
   const configuration = tripoConfiguration();
+  const whiteMatte = await createWhiteMattePng(Buffer.from(await image.arrayBuffer()), MAX_IMAGE_BYTES);
   const upload = new FormData();
-  upload.set('file', image, image.name || 'gift-reference.png');
+  upload.set('file', new Blob([whiteMatte], { type: 'image/png' }), 'gift-white-matte.png');
   const uploadResponse = await fetch(`${configuration.baseUrl}/files`, {
     method: 'POST',
     cache: 'no-store',

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateGiftImages, GiftAiError, IMAGE_GENERATION_MODEL } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
-import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage } from '@/lib/gift-db';
+import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
 
@@ -49,24 +49,32 @@ export async function POST(request: Request) {
       const reservation = await reserveGiftAiUsage(session, 'render', giftAiIdempotencyKey(request), { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL });
       return streamResponse(async (send) => {
         const startedAt = Date.now();
-        const tasks = new Map<number, Promise<{ index: number; image: StreamImageMessage['image'] }>>();
+        const tasks = new Map<number, Promise<{ index: number; image?: StreamImageMessage['image']; error?: string }>>();
         for (let index = 0; index < 3; index += 1) {
           tasks.set(index, generateGiftImages(prompt, 1).then(async (generated) => {
             const image = generated[0];
             if (!image) throw new GiftAiError('Image provider did not return an image.');
+            await updateGiftAiUsageModel(reservation.requestId, image.model || IMAGE_GENERATION_MODEL);
             const saved = local
               ? { ...image, assetId: index + 1 }
               : await persistGiftDraftGeneratedImage({ actor: employee!, requestId: draft.id, image, filename: `gift-render-${index + 1}.png`, metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: reservation.requestId } });
             return { index, image: saved };
-          }));
+          }).catch((error) => ({ index, error: error instanceof Error ? error.message : 'This concept failed to generate.' })));
         }
+        let readyCount = 0;
         try {
           while (tasks.size > 0) {
             const result = await Promise.race(tasks.values());
             tasks.delete(result.index);
-            send({ type: 'image', index: result.index, image: result.image, draft });
+            if (result.image) {
+              readyCount += 1;
+              send({ type: 'image', index: result.index, image: result.image, draft });
+            } else {
+              send({ type: 'slot-error', index: result.index, message: result.error || 'This concept failed to generate.' });
+            }
           }
-          await settleGiftAiUsage(reservation.requestId, 'succeeded');
+          if (readyCount > 0) await settleGiftAiUsage(reservation.requestId, 'succeeded');
+          else await settleGiftAiUsage(reservation.requestId, 'refunded', new GiftAiError('All gift concepts failed to generate.'));
           send({ type: 'done', draft, elapsedMs: Date.now() - startedAt });
         } catch (error) {
           await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => console.error('Unable to refund failed gift AI usage:', settleError));
@@ -100,6 +108,7 @@ export async function POST(request: Request) {
     });
     const images = await withGiftAiUsage(session, 'render', async ({ requestId }) => {
       const generated = await generateGiftImages(prompt, 3);
+      await updateGiftAiUsageModel(requestId, generated.find((image) => image.model)?.model || IMAGE_GENERATION_MODEL);
       return Promise.all(generated.map((image, index) => persistGiftDraftGeneratedImage({
         actor: employee,
         requestId: draft.id,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   BadgeCheck,
   Box,
@@ -43,6 +44,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { ToolHeader } from '@unionam/shared-ui';
 import { WeComQrLogin } from '@/components/gift/wecom-qr-login';
 import { GiftModelModal, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
@@ -372,13 +374,13 @@ const studioCopy = {
     oneImageHint: '支持 JPG、PNG、WebP；建议主体完整、背景简洁',
     replaceImage: '更换图片',
     imageCompressing: '图片超过 5MB，正在自动压缩…',
-    imagePreparingWhite: '正在识别主体并生成纯白背景建模图…',
-    imagePrepared: '白底建模图已生成，请确认主体与底座完整。',
-    imagePreparationFailed: '白底处理失败，请重试或更换背景更简洁的图片。',
+    imagePreparingWhite: '正在识别主体并生成透明背景建模图…',
+    imagePrepared: '透明背景建模图已生成，请确认主体与底座完整。',
+    imagePreparationFailed: '透明背景处理失败，请重试或更换主体更清晰的图片。',
     imageOriginal: '原图',
-    imagePreparedView: '白底建模图',
+    imagePreparedView: '透明背景建模图',
     imagePaintView: '喷漆效果',
-    imageRetryPreparation: '重新处理白底',
+    imageRetryPreparation: '重新处理透明背景',
     imagePaintPreviewTitle: '单色喷漆效果预览',
     imagePaintPreviewHint: '颜色只用于效果预览和生产工艺，不会写入白模 STL。',
     generatePaintPreview: '生成单色喷漆预览',
@@ -489,11 +491,11 @@ const studioCopy = {
     oneImageHint: 'JPG, PNG, or WebP; use a complete subject and simple background',
     replaceImage: 'Replace image',
     imageCompressing: 'This image exceeds 5MB and is being compressed…',
-    imagePreparingWhite: 'Isolating the subject and creating a pure-white 3D input…',
-    imagePrepared: 'The white-background input is ready. Confirm the complete subject and base.',
-    imagePreparationFailed: 'White-background preparation failed. Retry or use an image with a simpler background.',
+    imagePreparingWhite: 'Isolating the subject and creating a transparent-background 3D input…',
+    imagePrepared: 'The transparent-background input is ready. Confirm the complete subject and base.',
+    imagePreparationFailed: 'Transparent-background processing failed. Retry or use a clearer subject image.',
     imageOriginal: 'Original',
-    imagePreparedView: 'White 3D input',
+    imagePreparedView: 'Transparent 3D input',
     imagePaintView: 'Paint preview',
     imageRetryPreparation: 'Retry background cleanup',
     imagePaintPreviewTitle: 'Monochrome paint preview',
@@ -883,7 +885,7 @@ const surfaceEffectPresets: { id: SurfaceEffectId; hex: string; label: keyof typ
   { id: 'brown', hex: '#9A5A3A', label: 'surfaceBrown', hint: 'surfaceBrownHint' },
   { id: 'black', hex: '#151922', label: 'surfaceBlack', hint: 'surfaceBlackHint' },
   { id: 'glass', hex: '#7B8794', label: 'surfaceGlass', hint: 'surfaceGlassHint' },
-  { id: 'custom', hex: '#0B77B7', label: 'surfaceCustom', hint: 'surfaceCustomHint' },
+  { id: 'custom', hex: '#FFFFFF', label: 'surfaceCustom', hint: 'surfaceCustomHint' },
 ];
 
 type ProfileGroupId = 'industry' | 'tone' | 'occasion' | 'recipient' | 'constraint';
@@ -1171,7 +1173,7 @@ function restoredSurfaceEffect(finishType: string | null | undefined, paintColor
 }
 
 function whiteBackgroundPrompt() {
-  return 'Remove the entire background, background text, watermark-like marks, props, and unrelated elements. Preserve the exact subject geometry, pose, silhouette, proportions, camera angle, and complete supporting base. Keep every part that physically belongs to the sculpture or gift. Center the complete isolated subject on a pure white #FFFFFF background. Use clean, sharp edges and a subtle natural contact shadow only. Do not add, remove, redesign, crop, or recolor any part of the subject.';
+  return 'Remove the entire background, background text, watermark-like marks, props, floor, shadows, and unrelated elements. Preserve the exact subject geometry, pose, silhouette, proportions, camera angle, and complete supporting base. Keep every part that physically belongs to the sculpture or gift. Ensure the depicted gift is one watertight closed single-shell solid with every component physically joined and self-supporting; remove or merge any floating, disconnected, open, paper-thin, or fragile detail that would not be printable. Center the complete isolated subject on a fully transparent background with a real alpha channel. Do not add a white or gray backdrop, checkerboard, floor, cast shadow, contact shadow, model shadow, or halo. Use even neutral lighting without shadows and clean, sharp subject edges. Do not crop or redesign the intended gift.';
 }
 
 function monochromePaintPrompt(paintColor: string) {
@@ -1206,11 +1208,13 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const profileMenusRef = useRef<HTMLDivElement>(null);
   const [finish, setFinish] = useState<FinishMode>('paint');
   const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId>('bronze');
-  const [paintColor, setPaintColor] = useState('#0B77B7');
-  const [paintColorInput, setPaintColorInput] = useState('#0B77B7');
+  const [paintColor, setPaintColor] = useState('#FFFFFF');
+  const [paintColorInput, setPaintColorInput] = useState('#FFFFFF');
   const customColorInputRef = useRef<HTMLInputElement>(null);
   const [paintMenuOpen, setPaintMenuOpen] = useState(false);
   const paintMenuRef = useRef<HTMLDivElement>(null);
+  const surfaceCustomMenuRef = useRef<HTMLDivElement>(null);
+  const imagePaintMenuRef = useRef<HTMLDivElement>(null);
   const [briefStatus, setBriefStatus] = useState<BriefStatus>('idle');
   const [renderImages, setRenderImages] = useState<GiftImageResult[]>([]);
   const [renderSlots, setRenderSlots] = useState<RenderSlot[]>([]);
@@ -1254,7 +1258,8 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   useEffect(() => {
     if (!paintMenuOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!paintMenuRef.current?.contains(event.target as Node)) setPaintMenuOpen(false);
+      const target = event.target as Node;
+      if (!paintMenuRef.current?.contains(target) && !surfaceCustomMenuRef.current?.contains(target) && !imagePaintMenuRef.current?.contains(target)) setPaintMenuOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setPaintMenuOpen(false);
@@ -1429,7 +1434,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       const compressedSource = await compressModelImage(sourceFile);
       if (imagePreparationIdRef.current !== preparationId) return;
       setImageOriginalFile(compressedSource.file);
-      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-white-background.png', {
+      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-transparent-background.png', {
         draftRequestId: imageDraftRequestId,
         stage: 'white_background',
         title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
@@ -1652,15 +1657,22 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
   function chooseSurfaceEffect(effect: SurfaceEffectId) {
     const preset = surfaceEffectPresets.find((item) => item.id === effect);
+    const enteringCustomColor = effect === 'custom' && surfaceEffect !== 'custom';
     setSurfaceEffect(effect);
     setFinish(effect === 'bronze' ? 'bronze' : 'paint');
-    setPaintMenuOpen(false);
+    setPaintMenuOpen(effect === 'custom');
     if (preset && effect !== 'custom') {
       setPaintColor(preset.hex);
       setPaintColorInput(preset.hex);
+    } else if (enteringCustomColor) {
+      setPaintColor('#FFFFFF');
+      setPaintColorInput('#FFFFFF');
     }
     resetBriefResults();
-    if (effect === 'custom') window.setTimeout(() => customColorInputRef.current?.click(), 0);
+    if (effect === 'custom') window.setTimeout(() => {
+      customColorInputRef.current?.focus();
+      customColorInputRef.current?.select();
+    }, 0);
   }
 
   async function generateRenders() {
@@ -1717,6 +1729,10 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           setRenderImages((current) => { const next = [...current]; next[index] = message.image!; return next; });
           setRenderSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { status: 'ready', image: message.image, percent: 100, elapsedMs: Date.now() - startedAt } : slot));
           setSelectedRender((current) => current === null ? index : current);
+        }
+        if (message.type === 'slot-error' && Number.isInteger(message.index)) {
+          const index = Number(message.index);
+          setRenderSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { ...slot, status: 'error', error: message.message || (language === 'zh' ? '生成失败，请重试' : 'Generation failed. Retry.') } : slot));
         }
         if (message.type === 'error') throw { configuration: false, reason: message.error, message: message.message };
       };
@@ -1853,15 +1869,20 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
             const active = surfaceEffect === preset.id;
             const isCustom = preset.id === 'custom';
             const cardClassName = `min-h-24 rounded-xl border p-4 text-left transition ${active ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm'}`;
-            if (isCustom) return <div key={preset.id} className="relative">
+            if (isCustom) return <div key={preset.id} ref={surfaceCustomMenuRef} className="relative">
               <button type="button" onClick={() => chooseSurfaceEffect('custom')} className={`w-full ${cardClassName}`}>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="min-w-0 pl-7 text-sm font-black text-slate-900">{active ? `${labels.surfaceCustom}：${paintColor}` : labels.surfaceCustom}</span>
+                  <span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: active ? paintColor : preset.hex }} />{`${labels.surfaceCustom}：${active ? paintColor : preset.hex}`}</span>
                   {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}
                 </div>
                 <p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p>
               </button>
-              <input ref={customColorInputRef} type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="absolute left-4 top-4 z-10 h-5 w-5 cursor-pointer rounded-full border border-white p-0 shadow ring-1 ring-slate-200" aria-label={labels.customPaintColor} />
+              {active && paintMenuOpen ? <div role="dialog" aria-label={labels.customPaintColor} className="absolute left-0 top-[calc(100%+0.5rem)] z-40 w-full min-w-[220px] rounded-xl border border-cyan-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-black text-slate-900">{labels.customPaintColor}</span><button type="button" onClick={() => setPaintMenuOpen(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={language === 'zh' ? '关闭颜色输入' : 'Close color input'}><X className="h-4 w-4" /></button></div>
+                <div className="mt-2 flex items-center gap-2"><span className="h-9 w-9 shrink-0 rounded-md border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} /><label className="min-w-0 flex-1"><span className="sr-only">HEX</span><input ref={customColorInputRef} type="text" inputMode="text" value={paintColorInput} maxLength={7} placeholder="#RRGGBB" onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} onKeyDown={(event) => { if (event.key === 'Enter' && /^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintMenuOpen(false); if (event.key === 'Escape') setPaintMenuOpen(false); }} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm font-bold uppercase text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label></div>
+                <div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const activePreset = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => choosePaintColor(preset.hex)} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-6 rounded-md border-2 transition hover:-translate-y-0.5 ${activePreset ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{activePreset ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div>
+                <div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={/^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={language === 'zh' ? '取色器' : 'Color picker'} />{language === 'zh' ? '取色器' : 'Picker'}</label><span className="text-[10px] font-bold text-slate-400">HEX · #RRGGBB</span><button type="button" disabled={!/^#[0-9A-F]{6}$/.test(paintColorInput)} onClick={() => { choosePaintColor(paintColorInput); setPaintMenuOpen(false); }} className="h-8 rounded-md bg-[#0b4f9c] px-3 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{language === 'zh' ? '确定' : 'Apply'}</button></div>
+              </div> : null}
             </div>;
             return <button key={preset.id} type="button" onClick={() => chooseSurfaceEffect(preset.id)} className={cardClassName}><div className="flex items-center justify-between gap-3"><span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: preset.hex }} />{labels[preset.label]}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>;
           })}</div>
@@ -1922,7 +1943,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
               <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5">
                 <div className="flex items-start gap-3"><Palette className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">{labels.imagePaintPreviewTitle}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.imagePaintPreviewHint}</p></div></div>
                 <div className="mt-4 grid grid-cols-8 gap-2">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => choosePaintColor(preset.hex)} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-8 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div>
-                <div className="mt-3 flex items-center gap-2"><label className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-7 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-xs font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div>
+                <div ref={imagePaintMenuRef} className="relative mt-3 flex items-center gap-2"><button type="button" onClick={() => { setPaintMenuOpen((current) => !current); window.setTimeout(() => { customColorInputRef.current?.focus(); customColorInputRef.current?.select(); }, 0); }} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:border-cyan-400" aria-expanded={paintMenuOpen} aria-haspopup="dialog"><span className="h-5 w-7 rounded border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} />{labels.customPaintColor}</button>{paintMenuOpen ? <div role="dialog" aria-label={labels.customPaintColor} className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-72 rounded-xl border border-cyan-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-center justify-between gap-3"><span className="text-xs font-black text-slate-900">{labels.customPaintColor}</span><button type="button" onClick={() => setPaintMenuOpen(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={language === 'zh' ? '关闭颜色输入' : 'Close color input'}><X className="h-4 w-4" /></button></div><div className="mt-2 flex items-center gap-2"><span className="h-9 w-9 shrink-0 rounded-md border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} /><label className="min-w-0 flex-1"><span className="sr-only">HEX</span><input ref={customColorInputRef} type="text" inputMode="text" value={paintColorInput} maxLength={7} placeholder="#FFFFFF" onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} onKeyDown={(event) => { if (event.key === 'Enter' && /^#[0-9A-F]{6}$/.test(paintColorInput)) { choosePaintColor(paintColorInput); setPaintMenuOpen(false); } if (event.key === 'Escape') setPaintMenuOpen(false); }} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm font-bold uppercase text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label></div><div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={/^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={language === 'zh' ? '取色器' : 'Color picker'} />{language === 'zh' ? '取色器' : 'Picker'}</label><span className="text-[10px] font-bold text-slate-400">HEX · #RRGGBB</span><button type="button" disabled={!/^#[0-9A-F]{6}$/.test(paintColorInput)} onClick={() => { choosePaintColor(paintColorInput); setPaintMenuOpen(false); }} className="h-8 rounded-md bg-[#0b4f9c] px-3 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{language === 'zh' ? '确定' : 'Apply'}</button></div></div> : null}<input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-xs font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div>
                 <button type="button" onClick={() => void generateImagePaintPreview()} disabled={!imageFile || imagePreparing || imagePaintGenerating} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.generatingPaintPreview : labels.generatePaintPreview}</button>
               </div>
 
@@ -1933,10 +1954,10 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         </div>
       ) : (
         <div className="p-6 md:p-8">
-          <div className="grid gap-7 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]"><div><label className="block text-sm font-black text-slate-700">{labels.customerBrief}<textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={5} placeholder={labels.customerBriefPlaceholder} className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium leading-6 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><div className="mt-6 flex flex-wrap items-end justify-between gap-2"><div className="text-sm font-black text-slate-700">{labels.profileTags}</div><div className="text-[11px] font-bold text-slate-400">{labels.profileAutoHint}</div></div><div ref={profileMenusRef} className="mt-3 grid gap-2 sm:grid-cols-2">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div></div><div><div className="text-sm font-black text-slate-700">{labels.renderFinish}</div><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div ref={paintMenuRef} className={`relative ${paintMenuOpen ? 'z-30' : ''}`}><button type="button" aria-expanded={paintMenuOpen} aria-haspopup="dialog" onClick={() => { const switchingToPaint = finish !== 'paint'; setFinish('paint'); setOpenProfileGroup(null); setPaintMenuOpen((current) => switchingToPaint || !current); if (switchingToPaint) resetBriefResults(); }} className={`h-full w-full rounded-xl border p-4 text-left transition ${finish === 'paint' ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:border-cyan-300'}`}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full shadow-inner" style={{ backgroundColor: paintColor }} />{labels.paint}</div><div className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-slate-500"><span>{paintColor}</span><ChevronDown className={`h-4 w-4 transition ${paintMenuOpen ? 'rotate-180' : ''}`} /></div></div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.paintHint}</p></button>{finish === 'paint' && paintMenuOpen ? <div role="dialog" aria-label={labels.paintColor} className="absolute left-0 top-[calc(100%+0.5rem)] w-full min-w-[280px] rounded-xl border border-cyan-200 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{labels.paintColor}</div><p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{labels.paintColorHint}</p></div><span className="h-8 w-8 shrink-0 rounded-full border-4 border-white shadow" style={{ backgroundColor: paintColor }} /></div><div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => { choosePaintColor(preset.hex); setPaintMenuOpen(false); }} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-7 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div><div className="mt-3 flex items-center gap-2"><label className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={labels.customPaintColor} />{labels.customPaintColor}</label><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 font-mono text-[11px] font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div><p className="mt-2 text-[10px] font-bold leading-4 text-slate-400">{labels.paintColorRule}</p></div> : null}</div><button type="button" onClick={() => { const switchingToBronze = finish !== 'bronze'; setFinish('bronze'); setPaintMenuOpen(false); if (switchingToBronze) resetBriefResults(); }} className={`rounded-xl border p-4 text-left transition ${finish === 'bronze' ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full bg-gradient-to-br from-[#d9a963] to-[#6b3518] shadow-inner" />{labels.bronze}</div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.bronzeHint}</p></button></div>
+          <div className="grid gap-7 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]"><div><label className="block text-sm font-black text-slate-700">{labels.customerBrief}<textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={5} placeholder={labels.customerBriefPlaceholder} className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium leading-6 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><div className="mt-6 flex flex-wrap items-end justify-between gap-2"><div className="text-sm font-black text-slate-700">{labels.profileTags}</div><div className="text-[11px] font-bold text-slate-400">{labels.profileAutoHint}</div></div><div ref={profileMenusRef} className="mt-3 grid gap-2 sm:grid-cols-2">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div></div><div><div className="text-sm font-black text-slate-700">{labels.renderFinish}</div><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div ref={paintMenuRef} className={`relative ${paintMenuOpen ? 'z-30' : ''}`}><button type="button" aria-expanded={paintMenuOpen} aria-haspopup="dialog" onClick={() => { const switchingToPaint = finish !== 'paint'; setFinish('paint'); setOpenProfileGroup(null); setPaintMenuOpen((current) => switchingToPaint || !current); if (switchingToPaint) resetBriefResults(); }} className={`h-full w-full rounded-xl border p-4 text-left transition ${finish === 'paint' ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:border-cyan-300'}`}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full shadow-inner" style={{ backgroundColor: paintColor }} />{labels.paint}</div><div className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-slate-500"><span>{paintColor}</span><ChevronDown className={`h-4 w-4 transition ${paintMenuOpen ? 'rotate-180' : ''}`} /></div></div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.paintHint}</p></button>{finish === 'paint' && paintMenuOpen ? <div role="dialog" aria-label={labels.paintColor} className="absolute left-0 top-[calc(100%+0.5rem)] w-full min-w-[280px] rounded-xl border border-cyan-200 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{labels.paintColor}</div><p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{labels.paintColorHint}</p></div><span className="h-8 w-8 shrink-0 rounded-full border-4 border-white shadow" style={{ backgroundColor: paintColor }} /></div><div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => { choosePaintColor(preset.hex); setPaintMenuOpen(false); }} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-7 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div><div className="mt-3 flex items-center gap-2"><span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><span className="h-5 w-6 rounded border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} />{labels.customPaintColor}</span><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} placeholder="#FFFFFF" className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 font-mono text-[11px] font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div><p className="mt-2 text-[10px] font-bold leading-4 text-slate-400">{labels.paintColorRule}</p></div> : null}</div><button type="button" onClick={() => { const switchingToBronze = finish !== 'bronze'; setFinish('bronze'); setPaintMenuOpen(false); if (switchingToBronze) resetBriefResults(); }} className={`rounded-xl border p-4 text-left transition ${finish === 'bronze' ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full bg-gradient-to-br from-[#d9a963] to-[#6b3518] shadow-inner" />{labels.bronze}</div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.bronzeHint}</p></button></div>
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-bold leading-5 text-amber-900"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div></div>
 
-          {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => { setSelectedRender(index); setEditNotice(false); }} labels={labels} />)}</div>
+          {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} language={language} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => { setSelectedRender(index); setEditNotice(false); }} onPreview={() => setPreviewRender({ url: giftImageSource(image), index })} labels={labels} />)}</div>
 
             {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editing ? <span className="text-xs font-bold text-[#0b4f9c]">{labels.editingImage}</span> : null}{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">{editError}</span> : null}</div></div> : null}
 
@@ -2192,10 +2213,45 @@ function RequestAssetThumbnail({ request, language, onPreviewModel, onPreviewIma
 }
 
 function GiftImagePreviewModal({ url, language, onClose }: { url: string; language: GiftLanguage; onClose: () => void }) {
-  return <div className="fixed inset-0 z-[110] grid place-items-center bg-slate-950/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-label={language === 'zh' ? '图片预览' : 'Image preview'} className="relative max-h-[90vh] max-w-[92vw] overflow-hidden rounded-xl bg-white p-3 shadow-2xl"><button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm hover:bg-white" title={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button><img src={url} alt={language === 'zh' ? '申请图片预览' : 'Request image preview'} className="max-h-[84vh] max-w-[88vw] rounded-lg object-contain" /></div></div>;
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+  return <GiftModalPortal><div className="fixed inset-0 z-[9999] grid place-items-center bg-slate-950/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-label={language === 'zh' ? '图片预览' : 'Image preview'} className="relative max-h-[90vh] max-w-[92vw] overflow-hidden rounded-xl bg-white p-3 shadow-2xl"><button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm hover:bg-white" title={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button><img src={url} alt={language === 'zh' ? '申请图片预览' : 'Request image preview'} className="max-h-[84vh] max-w-[88vw] rounded-lg object-contain" /></div></div></GiftModalPortal>;
+}
+
+function GiftModalPortal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  return mounted ? createPortal(children, document.body) : null;
 }
 
 function GiftRenderPreviewModal({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('keydown', closeOnEscape); document.body.style.overflow = previousOverflow; };
+  }, [onClose]);
+  function setZoomAndCenter(value: number) {
+    setZoom(Math.min(4, Math.max(0.75, value)));
+    if (value <= 1) setOffset({ x: 0, y: 0 });
+  }
+  return <GiftModalPortal><div className="fixed inset-0 z-[9999] grid place-items-center bg-slate-950/80 p-3 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div role="dialog" aria-modal="true" aria-label={language === 'zh' ? `礼品方案 ${index + 1} 大图` : `Gift concept ${index + 1} preview`} className="flex h-[min(860px,94vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white"><div><div className="text-sm font-black">{language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`}</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">{language === 'zh' ? '滚轮缩放，拖动查看细节' : 'Scroll to zoom and drag to inspect details'}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setZoomAndCenter(zoom - 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut className="h-4 w-4" /></button><span className="w-12 text-center font-mono text-xs font-bold text-slate-300">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoomAndCenter(zoom + 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => setZoomAndCenter(1)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '重置缩放' : 'Reset zoom'}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={onClose} className="ml-2 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button></div></div>
+      <div className={`relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_35%,#334155_0%,#0f172a_70%)] ${zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`} onWheel={(event) => { event.preventDefault(); setZoomAndCenter(zoom + (event.deltaY < 0 ? 0.15 : -0.15)); }} onPointerDown={(event) => { if (zoom <= 1) return; event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y }; }} onPointerMove={(event) => { if (!dragRef.current) return; setOffset({ x: dragRef.current.offsetX + event.clientX - dragRef.current.x, y: dragRef.current.offsetY + event.clientY - dragRef.current.y }); }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}><img src={url} alt={language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`} draggable={false} className="absolute left-1/2 top-1/2 max-h-[78vh] max-w-[90%] select-none object-contain" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${zoom})` }} /></div>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-3"><span className="text-xs font-bold text-slate-400">{language === 'zh' ? '确认后可继续编辑方案' : 'You can continue editing after selecting'}</span><button type="button" onClick={() => { onSelect(); onClose(); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b77b7] px-5 text-xs font-black text-white transition hover:bg-[#08679d]"><Check className="h-4 w-4" />{language === 'zh' ? '选择此方案' : 'Choose this concept'}</button></div>
+    </div>
+  </div></GiftModalPortal>;
+}
+
+function GiftRenderPreviewModalLegacy({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);

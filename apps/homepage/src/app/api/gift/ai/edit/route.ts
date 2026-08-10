@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { editGiftImage, GiftAiError, IMAGE_EDIT_MODEL } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
-import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess } from '@/lib/gift-db';
+import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, persistGiftDraftFileAsset, persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
 
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
         metadata: { source: 'user', stage: `${stage}_mask`, usageRequestId: requestId },
       }) : null;
       const generated = await editGiftImage({ image, mask, prompt });
+      await updateGiftAiUsageModel(requestId, generated.model || IMAGE_EDIT_MODEL);
       const output = await persistGiftDraftGeneratedImage({
         actor: employee, requestId: draft.id, image: generated, filename: `${stage}.png`,
         metadata: { source: 'ai', stage, usageRequestId: requestId, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null },

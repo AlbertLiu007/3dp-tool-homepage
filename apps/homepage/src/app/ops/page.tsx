@@ -191,6 +191,10 @@ export default function GiftOpsPage() {
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const navItems = [{ label: headerLabels.navQuote, href: 'https://unionam.com/quote' }, { label: headerLabels.navConverter, href: 'https://unionam.com/converter' }, { label: headerLabels.navGift, href: 'https://unionam.com/gift' }];
 
+  useEffect(() => {
+    if (Number(new URLSearchParams(window.location.search).get('requestId'))) setModule('requests');
+  }, []);
+
   const loadModule = useCallback(async (target: OpsModule) => {
     setLoading(true); setError(null);
     const endpoints: Record<OpsModule, string> = { dashboard: '/api/gift/ops/dashboard', employees: '/api/gift/ops/employees', ai: '/api/gift/ops/ai-usage', models: '/api/gift/ops/models', requests: '/api/gift/ops/requests', audit: '/api/gift/ops/audit' };

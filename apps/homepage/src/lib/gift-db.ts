@@ -451,6 +451,14 @@ export async function markGiftAiUsageRunning(requestId: string, providerJobId: s
   `, [providerJobId, requestId]);
 }
 
+export async function updateGiftAiUsageModel(requestId: string, model: string) {
+  if (requestId.startsWith('dev-') || !model.trim()) return;
+  await databasePool().execute<ResultSetHeader>(`
+    UPDATE gift_ai_usage_events SET model_name = ?, updated_at = CURRENT_TIMESTAMP(3)
+    WHERE request_uid = ?
+  `, [model.trim().slice(0, 128), requestId]);
+}
+
 export async function replaceGiftAiProviderJob(requestId: string, currentProviderJobId: string, nextProviderJobId: string) {
   if (requestId.startsWith('dev-') || currentProviderJobId === nextProviderJobId) return nextProviderJobId;
   await databasePool().execute<ResultSetHeader>(`

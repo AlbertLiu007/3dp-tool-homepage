@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle2, ChevronRight, Download, Edit3, Eye, FileBox, FolderTree, LoaderCircle, PackageCheck, Plus, UploadCloud, X } from 'lucide-react';
 import { GiftModelViewer } from '@/components/model-viewer/gift-model-viewer';
 import { disposeObjectResources } from '@/lib/model/model-scene';
@@ -225,13 +225,14 @@ export function CompleteModelsPanel({ models, csrfToken, onReload }: { models: O
   </div>;
 }
 
-export function CompleteRequestsPanel({ requests, csrfToken, onReload }: { requests: OpsPrintRequest[]; csrfToken: string; onReload: () => void }) {
+export function CompleteRequestsPanel({ requests, csrfToken, onReload, initialRequestId = null }: { requests: OpsPrintRequest[]; csrfToken: string; onReload: () => void; initialRequestId?: number | null }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<RequestDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [operators, setOperators] = useState<{ id: number; name: string; role: string }[]>([]);
+  const autoOpenedRequestId = useRef<number | null>(null);
   const [form, setForm] = useState({ assigneeEmployeeId: '', productionBatchNo: '', scheduledStartAt: '', scheduledCompleteAt: '', deliveryMethod: 'pickup', deliveryRecipient: '', deliveryNotes: '', comment: '' });
   const visible = useMemo(() => requests.filter((item) => (filter === 'all' || item.request_status === filter) && `${item.request_no} ${item.title} ${item.requester_name}`.toLowerCase().includes(search.toLowerCase())), [requests, filter, search]);
   const requestCounts = useMemo(() => {
@@ -249,6 +250,12 @@ export function CompleteRequestsPanel({ requests, csrfToken, onReload }: { reque
       setForm({ assigneeEmployeeId: data.request.assigneeEmployeeId ? String(data.request.assigneeEmployeeId) : '', productionBatchNo: data.request.productionBatchNo || '', scheduledStartAt: data.request.scheduledStartAt?.slice(0, 16) || '', scheduledCompleteAt: data.request.scheduledCompleteAt?.slice(0, 16) || '', deliveryMethod: data.request.deliveryMethod || 'pickup', deliveryRecipient: data.request.deliveryRecipient || '', deliveryNotes: data.request.deliveryNotes || '', comment: '' });
     } catch (error) { window.alert(error instanceof Error ? error.message : '加载失败'); setSelectedId(null); } finally { setLoading(false); }
   }
+  useEffect(() => {
+    const linkedRequestId = initialRequestId || Number(new URLSearchParams(window.location.search).get('requestId')) || null;
+    if (!linkedRequestId || autoOpenedRequestId.current === linkedRequestId || !requests.some((item) => item.id === linkedRequestId)) return;
+    autoOpenedRequestId.current = linkedRequestId;
+    void open(linkedRequestId);
+  }, [initialRequestId, requests]);
   async function update(status: string) {
     if (!detail || !window.confirm(`确认将申请更新为“${requestLabels[status] || status}”？`)) return;
     try {

@@ -10,6 +10,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool, GiftAccessError, type GiftEmployeeAccess } from '@/lib/gift-db';
 import { recordGiftOpsAudit } from '@/lib/gift-ops-db';
 import { createGiftPreviewGlb } from '@/lib/model/create-preview-glb';
+import { createTransparentPng } from '@/lib/image-transparency';
 
 type EcsRoleCredential = {
   AccessKeyId?: string;
@@ -345,32 +346,51 @@ export async function persistGiftDraftFileAsset(input: {
 export async function persistGiftDraftGeneratedImage(input: {
   actor: GiftEmployeeAccess;
   requestId: number;
-  image: { dataUrl?: string; url?: string };
+  image: {
+    dataUrl?: string;
+    url?: string;
+    model?: string;
+    transparentBackground?: boolean;
+    transparentBackgroundProcessor?: string;
+  };
   filename: string;
   kind?: Extract<GiftDraftAssetKind, 'render_image' | 'model_preview'>;
   metadata?: Record<string, unknown>;
 }) {
   let buffer: Buffer;
-  let contentType = 'image/png';
   if (input.image.dataUrl) {
     const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(input.image.dataUrl);
     if (!match) throw new GiftAccessError('Generated image data is invalid.', 502, 'validation');
-    contentType = match[1];
     buffer = Buffer.from(match[2], 'base64');
   } else if (input.image.url) {
     const sourceUrl = new URL(input.image.url);
     if (sourceUrl.protocol !== 'https:') throw new GiftAccessError('Generated image URL is invalid.', 502, 'validation');
     const response = await fetch(input.image.url, { cache: 'no-store', signal: AbortSignal.timeout(120_000) });
     if (!response.ok) throw new GiftAccessError('Unable to download the generated image.', 502, 'configuration');
-    contentType = response.headers.get('content-type')?.split(';')[0] || contentType;
+    const contentType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
     if (!contentType.startsWith('image/')) throw new GiftAccessError('Generated image content type is invalid.', 502, 'validation');
     buffer = Buffer.from(await response.arrayBuffer());
   } else {
     throw new GiftAccessError('Generated image is empty.', 502, 'validation');
   }
+  // The AI adapter already produces a transparent PNG. Do not run the
+  // flood-fill a second time: repeated matting can erode light subject edges.
+  // Keep the storage check for callers that provide an unnormalized image.
+  let transparentBuffer = buffer;
+  if (!input.image.transparentBackground) {
+    transparentBuffer = await createTransparentPng(buffer, 20 * 1024 * 1024).catch((error) => {
+      throw new GiftAccessError(error instanceof Error ? error.message : 'Generated image background could not be made transparent.', 502, 'validation');
+    });
+  }
   const asset = await persistGiftDraftBufferAsset({
-    actor: input.actor, requestId: input.requestId, kind: input.kind || 'render_image', buffer,
-    filename: input.filename, contentType, metadata: input.metadata,
+    actor: input.actor, requestId: input.requestId, kind: input.kind || 'render_image',
+    filename: input.filename.replace(/\.(?:jpe?g|webp|png)$/i, '') + '.png', contentType: 'image/png', buffer: transparentBuffer,
+    metadata: {
+      ...(input.metadata || {}),
+      transparentBackground: true,
+      transparentBackgroundProcessor: input.image.transparentBackgroundProcessor || 'sharp-edge-flood-fill-v2',
+      ...(input.image.model ? { imageModel: input.image.model } : {}),
+    },
   });
   return { assetId: asset.assetId, url: asset.url };
 }
@@ -840,3 +860,76 @@ export async function getGiftAssetUrl(
 }
 
 export const getGiftOpsAssetUrl = getGiftAssetUrl;
+
+export async function backfillGiftTransparentImages(limit = 100, dryRun = false) {
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 10_000);
+  const [rows] = await databasePool().execute<RowDataPacket[]>(`
+    SELECT id, bucket_name, object_key, original_filename, content_type, metadata
+    FROM gift_assets
+    WHERE asset_kind = 'render_image'
+      AND asset_status = 'active'
+      AND content_type LIKE 'image/%'
+      AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.source')), '') = 'ai'
+      AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.transparentBackgroundProcessor')), '') <> 'sharp-edge-flood-fill-v2'
+    ORDER BY id ASC
+    LIMIT ${safeLimit}
+  `);
+  const result = { total: rows.length, processed: 0, skipped: 0, failed: 0, errors: [] as { assetId: number; message: string }[] };
+  if (dryRun) return result;
+
+  const client = await ossClient();
+  for (const row of rows) {
+    const assetId = Number(row.id);
+    const oldObjectKey = String(row.object_key);
+    let newObjectKey = '';
+    try {
+      const source = await client.get(oldObjectKey);
+      const sourceBuffer = Buffer.isBuffer(source.content) ? source.content : Buffer.from(source.content as Uint8Array);
+      const transparent = await createTransparentPng(sourceBuffer, 20 * 1024 * 1024);
+      const filename = String(row.original_filename || `gift-render-${assetId}.png`).replace(/\.(?:jpe?g|webp|png)$/i, '') + '.png';
+      newObjectKey = `${oldObjectKey.replace(/\.[^.]+$/, '')}-transparent-${randomUUID()}.png`;
+      await client.put(newObjectKey, transparent, {
+        mime: 'image/png',
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        },
+      });
+
+      let metadata: Record<string, unknown> = {};
+      try {
+        const parsed = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>;
+      } catch {
+        metadata = {};
+      }
+      metadata.transparentBackground = true;
+      metadata.transparentBackgroundProcessor = 'sharp-edge-flood-fill-v2';
+      metadata.transparentBackgroundProcessedAt = new Date().toISOString();
+      metadata.transparentBackgroundOriginalObjectKey = oldObjectKey;
+
+      const [update] = await databasePool().execute<ResultSetHeader>(`
+        UPDATE gift_assets
+        SET object_key = ?, object_key_hash = ?, original_filename = ?, content_type = 'image/png',
+            file_extension = 'png', size_bytes = ?, sha256 = ?, metadata = ?
+        WHERE id = ? AND asset_status = 'active' AND object_key = ?
+      `, [
+        newObjectKey,
+        createHash('sha256').update(newObjectKey).digest('hex'),
+        filename.slice(0, 255),
+        transparent.byteLength,
+        createHash('sha256').update(transparent).digest('hex'),
+        JSON.stringify(metadata),
+        assetId,
+        oldObjectKey,
+      ]);
+      if (update.affectedRows !== 1) throw new Error('Asset changed during backfill; database pointer was not updated.');
+      result.processed += 1;
+    } catch (error) {
+      result.failed += 1;
+      result.errors.push({ assetId, message: error instanceof Error ? error.message : 'Unknown backfill error.' });
+      if (newObjectKey) await client.delete(newObjectKey).catch(() => undefined);
+    }
+  }
+  return result;
+}
