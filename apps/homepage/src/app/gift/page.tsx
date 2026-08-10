@@ -17,6 +17,7 @@ import {
   Clock3,
   Cpu,
   Download,
+  ExternalLink,
   Factory,
   FileText,
   Gift,
@@ -74,9 +75,13 @@ const copy = {
     qrRetry: '重新加载',
     qrScanHint: '请使用手机企业微信“扫一扫”登录',
     qrSecureHint: '二维码由企业微信官方提供，扫码后将在手机端确认登录。',
+    qrExternalHint: '从企业微信工作台打开可免扫码登录。',
     qrOpenOfficial: '在企业微信官方页面登录',
-    mobileLoginTitle: '在当前设备继续登录',
-    mobileLoginHint: '移动端无法扫描当前屏幕，请打开企业微信官方授权页完成身份确认。',
+    mobileLoginTitle: '请在企业微信中登录',
+    mobileLoginHint: '当前浏览器无法读取企业微信登录态。请从企业微信工作台打开礼品站，即可免扫码登录。',
+    wecomAutoTitle: '正在使用企业微信登录',
+    wecomAutoHint: '正在读取当前企业微信账号，无需再次扫码。',
+    wecomAutoButton: '继续企业微信登录',
     secureTitle: '客户礼赠与业务打印，一站申请',
     secureDescription: '员工身份由企业微信统一认证，客户礼品、展会样品和业务样件在一个平台留痕管理。',
     hello: '你好',
@@ -185,9 +190,13 @@ const copy = {
     qrRetry: 'Reload',
     qrScanHint: 'Scan with WeCom on your phone to sign in',
     qrSecureHint: 'This QR code is provided by WeCom. Confirm the sign-in on your phone after scanning.',
+    qrExternalHint: 'Open the gift station from the WeCom workbench to sign in without scanning.',
     qrOpenOfficial: 'Open official WeCom sign-in',
-    mobileLoginTitle: 'Continue on this device',
-    mobileLoginHint: 'A phone cannot scan its own screen. Open the official WeCom authorization page to continue.',
+    mobileLoginTitle: 'Sign in from WeCom',
+    mobileLoginHint: 'This browser cannot read your WeCom session. Open the gift station from the WeCom workbench to sign in without scanning.',
+    wecomAutoTitle: 'Signing in with WeCom',
+    wecomAutoHint: 'Reading the current WeCom account. No QR scan is needed.',
+    wecomAutoButton: 'Continue with WeCom',
     secureTitle: 'One workflow for gifts and business printing',
     secureDescription: 'WeCom verifies employees while customer gifts, exhibition samples, and business parts are tracked in one place.',
     hello: 'Welcome',
@@ -593,6 +602,7 @@ function LoginGate({
   showDevLogin,
   loginPending,
   errorCode,
+  inWeCom,
 }: {
   t: GiftCopy;
   language: GiftLanguage;
@@ -601,6 +611,7 @@ function LoginGate({
   showDevLogin: boolean;
   loginPending: boolean;
   errorCode: string | null;
+  inWeCom: boolean;
 }) {
   const errorMessage = errorCode === 'configuration'
     ? t.authConfigError
@@ -638,8 +649,8 @@ function LoginGate({
             <div className="flex items-center gap-3">
               <div className="grid h-12 w-12 place-items-center rounded-md bg-cyan-50 text-[#0b4f9c]"><QrCode className="h-6 w-6" /></div>
               <div>
-                <h2 className="text-xl font-black text-slate-950">{t.loginTitle}</h2>
-                <p className="mt-1 text-xs font-bold text-slate-500">{t.loginHint}</p>
+                <h2 className="text-xl font-black text-slate-950">{inWeCom ? t.wecomAutoTitle : t.loginTitle}</h2>
+                <p className="mt-1 text-xs font-bold text-slate-500">{inWeCom ? t.wecomAutoHint : t.loginHint}</p>
               </div>
             </div>
             <p className="mt-6 text-sm font-medium leading-6 text-slate-500">{t.loginDescription}</p>
@@ -659,22 +670,34 @@ function LoginGate({
                 </button>
               </div>
             ) : null}
-            <WeComQrLogin
-              language={language}
-              loginPending={loginPending}
-              onOpenOfficial={onLogin}
-              labels={{
-                loading: t.qrLoading,
-                failed: t.qrFailed,
-                failedHint: t.qrFailedHint,
-                retry: t.qrRetry,
-                scanHint: t.qrScanHint,
-                secureHint: t.qrSecureHint,
-                openOfficial: loginPending ? t.loginStarting : t.qrOpenOfficial,
-                mobileTitle: t.mobileLoginTitle,
-                mobileHint: t.mobileLoginHint,
-              }}
-            />
+            {inWeCom ? (
+              <div className="mt-6 rounded-lg border border-cyan-100 bg-cyan-50/70 p-5 text-center">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-[#0b4f9c] shadow-sm"><LoaderCircle className="h-7 w-7 animate-spin" /></div>
+                <h3 className="mt-4 text-sm font-black text-slate-900">{t.wecomAutoTitle}</h3>
+                <p className="mx-auto mt-2 max-w-xs text-xs font-medium leading-5 text-slate-500">{t.wecomAutoHint}</p>
+                <button type="button" onClick={onLogin} disabled={loginPending} className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-4 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-wait disabled:opacity-70" data-umami-event="gift_wecom_silent_login_click">
+                  {loginPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}{t.wecomAutoButton}
+                </button>
+              </div>
+            ) : (
+              <WeComQrLogin
+                language={language}
+                loginPending={loginPending}
+                onOpenOfficial={onLogin}
+                labels={{
+                  loading: t.qrLoading,
+                  failed: t.qrFailed,
+                  failedHint: t.qrFailedHint,
+                  retry: t.qrRetry,
+                  scanHint: t.qrScanHint,
+                  secureHint: t.qrSecureHint,
+                  externalHint: t.qrExternalHint,
+                  openOfficial: loginPending ? t.loginStarting : t.qrOpenOfficial,
+                  mobileTitle: t.mobileLoginTitle,
+                  mobileHint: t.mobileLoginHint,
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -2465,6 +2488,7 @@ export default function GiftPage() {
   const [employee, setEmployee] = useState<GiftEmployee | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [inWeCom] = useState(() => typeof navigator !== 'undefined' && /wxwork|wecom/i.test(navigator.userAgent));
   const navItems = [
     { label: headerLabels.navQuote, href: '/quote' },
     { label: headerLabels.navConverter, href: '/converter' },
@@ -2482,9 +2506,15 @@ export default function GiftPage() {
         if (cancelled) return;
 
         if (response.ok && payload.authenticated && payload.user) {
+          window.sessionStorage.removeItem('unionam.wecom.silent-login-attempt');
           setEmployee(payload.user);
           setAuthStatus('authenticated');
         } else {
+          if (inWeCom && !queryError && !window.sessionStorage.getItem('unionam.wecom.silent-login-attempt')) {
+            window.sessionStorage.setItem('unionam.wecom.silent-login-attempt', '1');
+            window.location.replace('/api/gift/auth/wecom/silent');
+            return;
+          }
           setEmployee(null);
           setAuthStatus('guest');
         }
@@ -2499,11 +2529,16 @@ export default function GiftPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [inWeCom]);
 
   function startWeComLogin() {
     setLoginPending(true);
     setAuthError(null);
+    if (inWeCom) {
+      window.sessionStorage.setItem('unionam.wecom.silent-login-attempt', '1');
+      window.location.assign('/api/gift/auth/wecom/silent');
+      return;
+    }
     window.location.assign('/api/gift/auth/wecom/start');
   }
 
@@ -2549,6 +2584,7 @@ export default function GiftPage() {
           showDevLogin={process.env.NODE_ENV !== 'production'}
           loginPending={loginPending}
           errorCode={authError}
+          inWeCom={inWeCom}
         />
       ) : null}
       {authStatus === 'authenticated' && employee ? <GiftDashboard language={giftLanguage} t={t} employee={employee} onLogout={logout} onEmployeeUpdated={setEmployee} /> : null}

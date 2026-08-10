@@ -33,6 +33,7 @@ type WeComQrLabels = {
   openOfficial: string;
   mobileTitle: string;
   mobileHint: string;
+  externalHint: string;
 };
 
 declare global {
@@ -173,6 +174,7 @@ export function WeComQrLogin({
         </div>
         <p className="mt-3 text-xs font-bold text-slate-600">{labels.scanHint}</p>
         <p className="mt-1 text-[11px] font-medium leading-5 text-slate-400">{labels.secureHint}</p>
+        <p className="mt-3 text-[11px] font-medium leading-5 text-slate-400">{labels.externalHint}</p>
       </div>
       <button type="button" onClick={onOpenOfficial} disabled={loginPending} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-xs font-black text-slate-600 transition hover:border-cyan-300 hover:bg-cyan-50 hover:text-[#0b4f9c] disabled:cursor-wait disabled:opacity-70" data-umami-event="gift_wecom_login_fallback_click">
         {loginPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}{labels.openOfficial}

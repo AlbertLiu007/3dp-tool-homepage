@@ -155,6 +155,19 @@ export function buildWeComQrLoginUrl(state: string, language: 'zh' | 'en' = 'zh'
   return url;
 }
 
+/** Use the current WeCom app session when the site is opened inside WeCom. */
+export function buildWeComSilentLoginUrl(state: string) {
+  const configuration = getWeComConfiguration();
+  const url = new URL('https://open.weixin.qq.com/connect/oauth2/authorize');
+  url.searchParams.set('appid', configuration.corpId);
+  url.searchParams.set('redirect_uri', configuration.callbackUrl);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', 'snsapi_base');
+  url.searchParams.set('state', state);
+  url.hash = 'wechat_redirect';
+  return url;
+}
+
 export async function verifyWeComEmployee(code: string): Promise<VerifiedWeComEmployee> {
   const configuration = getWeComConfiguration();
   const accessToken = await getAccessToken(configuration.corpId, configuration.appSecret);
