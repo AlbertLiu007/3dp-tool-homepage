@@ -379,20 +379,24 @@ export async function persistGiftDraftGeneratedImage(input: {
   // background before they reach this persistence boundary. Keep those bytes
   // unchanged so local and OSS-backed paths render the same image.
   const generatedBuffer = buffer;
+  const metadata = { ...(input.metadata || {}) };
+  delete metadata.transparentBackground;
+  delete metadata.transparentBackgroundProcessor;
+  delete metadata.transparentBackgroundProcessedAt;
+  delete metadata.transparentBackgroundOriginalObjectKey;
+
   const asset = await persistGiftDraftBufferAsset({
     actor: input.actor, requestId: input.requestId, kind: input.kind || 'render_image',
     filename: input.filename.replace(/\.(?:jpe?g|webp|png)$/i, '') + '.png', contentType: 'image/png', buffer: generatedBuffer,
     metadata: {
-      ...(input.metadata || {}),
-      whiteBackground: input.image.whiteBackground !== false,
-      whiteBackgroundProcessor: input.image.whiteBackground
-        ? input.image.whiteBackgroundProcessor || 'sharp-adaptive-cutout-white-v1'
-        : undefined,
-      transparentBackground: Boolean(input.image.transparentBackground),
-      imageBackground: input.image.transparentBackground ? 'transparent' : 'white',
-      ...(input.image.transparentBackground
-        ? { transparentBackgroundProcessor: input.image.transparentBackgroundProcessor || 'legacy-transparent-asset' }
-        : {}),
+      ...metadata,
+      // All newly persisted AI gift images are the opaque white-background
+      // artifacts used by the image-to-3D pipeline. Transparency conversion
+      // remains available only through the explicit historical repair tool.
+      whiteBackground: true,
+      whiteBackgroundProcessor: input.image.whiteBackgroundProcessor || 'upstream-white-background',
+      transparentBackground: false,
+      imageBackground: 'white',
       ...(input.image.model ? { imageModel: input.image.model } : {}),
     },
   });
