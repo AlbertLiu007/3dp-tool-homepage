@@ -31,6 +31,10 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Prompt must contain 1 to 4000 characters.', 400, 'validation');
+    const monochromeColor = typeof body.monochromeColor === 'string' && body.monochromeColor.trim()
+      ? body.monochromeColor.trim().toUpperCase()
+      : undefined;
+    if (monochromeColor && !/^#[0-9A-F]{6}$/.test(monochromeColor)) throw new GiftAiError('Monochrome paint color must be a six-digit HEX value.', 400, 'validation');
     if (body.stream === true) {
       const local = isLocalGiftDevelopmentSession(session);
       const employee = local ? null : await requireGiftEmployeeAccess(session, { approved: true });
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
         const startedAt = Date.now();
         const tasks = new Map<number, Promise<{ index: number; image?: StreamImageMessage['image']; error?: string }>>();
         for (let index = 0; index < 3; index += 1) {
-          tasks.set(index, generateGiftImages(prompt, 1).then(async (generated) => {
+          tasks.set(index, generateGiftImages(prompt, 1, monochromeColor).then(async (generated) => {
             const image = generated[0];
             if (!image) throw new GiftAiError('Image provider did not return an image.');
             await updateGiftAiUsageModel(reservation.requestId, image.model || IMAGE_GENERATION_MODEL);
@@ -87,7 +91,7 @@ export async function POST(request: Request) {
       const generated = await withGiftAiUsage(
         session,
         'render',
-        () => generateGiftImages(prompt, 3),
+        () => generateGiftImages(prompt, 3, monochromeColor),
         giftAiIdempotencyKey(request),
         { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL },
       );
@@ -107,7 +111,7 @@ export async function POST(request: Request) {
       specifications: body.specifications,
     });
     const images = await withGiftAiUsage(session, 'render', async ({ requestId }) => {
-      const generated = await generateGiftImages(prompt, 3);
+      const generated = await generateGiftImages(prompt, 3, monochromeColor);
       await updateGiftAiUsageModel(requestId, generated.find((image) => image.model)?.model || IMAGE_GENERATION_MODEL);
       return Promise.all(generated.map((image, index) => persistGiftDraftGeneratedImage({
         actor: employee,

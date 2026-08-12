@@ -383,13 +383,18 @@ const studioCopy = {
     oneImageHint: '支持 JPG、PNG、WebP；建议主体完整、背景简洁',
     replaceImage: '更换图片',
     imageCompressing: '图片超过 5MB，正在自动压缩…',
-    imagePreparingWhite: '正在识别主体并生成透明背景建模图…',
-    imagePrepared: '透明背景建模图已生成，请确认主体与底座完整。',
-    imagePreparationFailed: '透明背景处理失败，请重试或更换主体更清晰的图片。',
+    imagePreparingWhite: '正在识别主体并生成白底建模图…',
+    imagePrepared: '白底建模图已生成，请确认主体与底座完整。',
+    imagePreparationFailed: '白底建模图生成失败，请重试或更换主体更清晰的图片。',
     imageOriginal: '原图',
-    imagePreparedView: '透明背景建模图',
-    imagePaintView: '喷漆效果',
-    imageRetryPreparation: '重新处理透明背景',
+    imagePreparedView: '白底建模图',
+    imagePaintView: '表面效果预览',
+    imageSurfaceTitle: '选择礼品表面效果',
+    imageSurfaceHint: '白底建模图完成后选择工艺，系统会自动生成对应的礼品渲染图。',
+    imageSurfaceWaiting: '请先完成上传并等待白底建模图生成。',
+    imageSurfaceGenerating: '正在生成表面效果渲染图…',
+    imageSurfaceReady: '表面效果渲染图已生成，可确认后生成白膜 3D 模型。',
+    imageRetryPreparation: '重新生成白底建模图',
     imagePaintPreviewTitle: '单色喷漆效果预览',
     imagePaintPreviewHint: '颜色只用于效果预览和生产工艺，不会写入白模 STL。',
     generatePaintPreview: '生成单色喷漆预览',
@@ -408,28 +413,28 @@ const studioCopy = {
     profileTags: '客户画像定位（下拉多选）',
     profileAutoHint: '选择后会自动生成礼品创意文案，也可继续手动修改。',
     surfaceEffect: '礼品表面效果',
-    surfaceEffectHint: '选择成品表面表现，生成的模型仍保留可打印的白膜结构。',
+    surfaceEffectHint: '除透明件外，所有效果均为整件单一纯色喷漆；生成的模型仍保留可打印的白膜结构。',
     surfaceBronze: '铜做旧',
-    surfaceBronzeHint: '纪念感、文化感与高端桌面摆件',
+    surfaceBronzeHint: '整件古铜色单色喷漆，不保留原图配色',
     surfaceTransparent: '透明件',
-    surfaceTransparentHint: '通透、轻盈，适合科技与未来感礼品',
+    surfaceTransparentHint: '无色透明，呈现玻璃或透明亚克力效果',
     surfaceSilver: '金属银',
-    surfaceSilverHint: '精密、现代，突出金属质感',
+    surfaceSilverHint: '银色汽车金属漆，整件单一颜色',
     surfaceRed: '亮红色',
-    surfaceRedHint: '醒目、热烈，适合活动与品牌礼赠',
-    surfaceBrown: '亮棕色',
-    surfaceBrownHint: '温暖、沉稳，适合商务纪念',
+    surfaceRedHint: '亮红色汽车金属漆，整件单一颜色',
+    surfaceBrown: '磨砂黑',
+    surfaceBrownHint: '整件磨砂黑喷漆，低光泽，不使用第二种颜色',
     surfaceBlack: '亮黑色',
-    surfaceBlackHint: '克制、专业，适合高端客户',
-    surfaceGlass: '琉璃灰原色',
-    surfaceGlassHint: '保留灰色原材质，呈现琉璃般光泽',
+    surfaceBlackHint: '亮黑色汽车金属漆，整件单一颜色',
+    surfaceGlass: '哑灰色',
+    surfaceGlassHint: '整件哑灰色喷漆，不透明，不保留原图配色',
     surfaceCustom: '自定义颜色',
     surfaceCustomHint: '输入 HEX 颜色，生成单色表面效果',
     renderFinish: '礼品表面效果',
     paint: '单色喷漆',
     paintHint: '适合品牌色、现代感和科技类礼品',
     paintColor: '选择喷漆颜色',
-    paintColorHint: '生成的摆件整体使用所选纯色，仅保留自然光影。',
+    paintColorHint: '生成的摆件整体使用所选纯色亮面喷漆，仅保留自然高光。',
     customPaintColor: '自定义颜色',
     paintColorRule: '单色喷漆效果不使用渐变、拼色或其他材质色。',
     bronze: '铜做旧',
@@ -500,13 +505,18 @@ const studioCopy = {
     oneImageHint: 'JPG, PNG, or WebP; use a complete subject and simple background',
     replaceImage: 'Replace image',
     imageCompressing: 'This image exceeds 5MB and is being compressed…',
-    imagePreparingWhite: 'Isolating the subject and creating a transparent-background 3D input…',
-    imagePrepared: 'The transparent-background input is ready. Confirm the complete subject and base.',
-    imagePreparationFailed: 'Transparent-background processing failed. Retry or use a clearer subject image.',
+    imagePreparingWhite: 'Isolating the subject and creating a white-matte 3D input…',
+    imagePrepared: 'The white-matte 3D input is ready. Confirm the complete subject and base.',
+    imagePreparationFailed: 'White-matte 3D input generation failed. Retry or use a clearer subject image.',
     imageOriginal: 'Original',
-    imagePreparedView: 'Transparent 3D input',
-    imagePaintView: 'Paint preview',
-    imageRetryPreparation: 'Retry background cleanup',
+    imagePreparedView: 'White-matte 3D input',
+    imagePaintView: 'Surface preview',
+    imageSurfaceTitle: 'Choose gift surface effect',
+    imageSurfaceHint: 'After the white-matte input is ready, choose a finish and the matching gift render will be generated automatically.',
+    imageSurfaceWaiting: 'Finish the upload and wait for the white-matte input first.',
+    imageSurfaceGenerating: 'Generating the surface-effect render…',
+    imageSurfaceReady: 'The surface-effect render is ready. Confirm it before generating the white 3D model.',
+    imageRetryPreparation: 'Regenerate white-matte 3D input',
     imagePaintPreviewTitle: 'Monochrome paint preview',
     imagePaintPreviewHint: 'Paint is for preview and production instructions only. It is never embedded in the white STL.',
     generatePaintPreview: 'Generate paint preview',
@@ -525,21 +535,21 @@ const studioCopy = {
     profileTags: 'Customer profile (multi-select)',
     profileAutoHint: 'Selections automatically create the gift brief, which remains fully editable.',
     surfaceEffect: 'Gift surface effect',
-    surfaceEffectHint: 'Choose the finished surface look. The generated model remains a printable white base.',
+    surfaceEffectHint: 'Except for Transparent, every finish uses one solid paint color over the entire gift. The generated model remains a printable white base.',
     surfaceBronze: 'Antique bronze',
-    surfaceBronzeHint: 'Commemorative, cultural, and premium desk pieces',
+    surfaceBronzeHint: 'One antique-bronze paint color over the entire gift',
     surfaceTransparent: 'Transparent',
-    surfaceTransparentHint: 'Light, clear, and futuristic for technology gifts',
-    surfaceSilver: 'Metallic silver',
-    surfaceSilverHint: 'Precise, modern, and visibly metallic',
+    surfaceTransparentHint: 'Colorless and clear, like glass or transparent acrylic',
+    surfaceSilver: 'Bright metallic silver',
+    surfaceSilverHint: 'Bright silver automotive metallic paint, one color only',
     surfaceRed: 'Bright red',
-    surfaceRedHint: 'Bold and energetic for events and brand gifts',
-    surfaceBrown: 'Bright brown',
-    surfaceBrownHint: 'Warm and steady for business keepsakes',
+    surfaceRedHint: 'One bright-red paint color with no gold accents',
+    surfaceBrown: 'Matte black',
+    surfaceBrownHint: 'Opaque matte-black paint with low gloss and no secondary colors',
     surfaceBlack: 'Glossy black',
-    surfaceBlackHint: 'Restrained and professional for premium customers',
-    surfaceGlass: 'Glass gray original',
-    surfaceGlassHint: 'Keep the gray material with a glass-like sheen',
+    surfaceBlackHint: 'One glossy-black paint color with no secondary colors',
+    surfaceGlass: 'Matte gray',
+    surfaceGlassHint: 'Opaque matte-gray paint with no translucency or original-image colors',
     surfaceCustom: 'Custom color',
     surfaceCustomHint: 'Enter a HEX color for a single-color surface',
     renderFinish: 'Gift surface effect',
@@ -721,9 +731,9 @@ function GiftModelVisual({ model, onPreview }: { model: GiftModel; onPreview?: (
   if (previewSources.length > 0) {
     const movePreview = (direction: number) => setPreviewIndex((current) => (current + direction + previewSources.length) % previewSources.length);
     return (
-      <div className="relative grid h-52 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_38%,#ffffff_0%,#f0f7fa_60%,#dce9ef_100%)] p-3">
+      <div className="relative grid h-52 place-items-center overflow-hidden bg-white p-3">
         <button type="button" onClick={onPreview} disabled={!onPreview} aria-label={`${model.name} 3D 模型预览`} className="group/preview absolute inset-0 grid place-items-center p-3 disabled:cursor-default">
-          {previewSources.map((source, index) => <img key={source} src={source} alt={`${model.name} ${index + 1}`} className={`absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] object-contain drop-shadow-[0_18px_20px_rgba(15,23,42,0.2)] transition duration-500 ${index === previewIndex ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`} />)}
+          {previewSources.map((source, index) => <img key={source} src={source} alt={`${model.name} ${index + 1}`} className={`absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] object-contain drop-shadow-[0_12px_16px_rgba(15,23,42,0.14)] transition duration-500 ${index === previewIndex ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`} />)}
           {onPreview ? <span className="absolute bottom-3 right-3 grid h-8 w-8 place-items-center rounded-full bg-slate-950/65 text-white opacity-0 shadow-sm backdrop-blur transition group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100"><Maximize2 className="h-4 w-4" /></span> : null}
         </button>
         <span className="absolute left-4 top-4 rounded-md border border-white/80 bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#0b4f9c] shadow-sm">{model.categoryLabel}</span>
@@ -905,7 +915,7 @@ const surfaceEffectPresets: { id: SurfaceEffectId; hex: string; label: keyof typ
   { id: 'transparent', hex: '#BFEAF5', label: 'surfaceTransparent', hint: 'surfaceTransparentHint' },
   { id: 'silver', hex: '#B9C1CC', label: 'surfaceSilver', hint: 'surfaceSilverHint' },
   { id: 'red', hex: '#E3262E', label: 'surfaceRed', hint: 'surfaceRedHint' },
-  { id: 'brown', hex: '#9A5A3A', label: 'surfaceBrown', hint: 'surfaceBrownHint' },
+  { id: 'brown', hex: '#252525', label: 'surfaceBrown', hint: 'surfaceBrownHint' },
   { id: 'black', hex: '#151922', label: 'surfaceBlack', hint: 'surfaceBlackHint' },
   { id: 'glass', hex: '#7B8794', label: 'surfaceGlass', hint: 'surfaceGlassHint' },
   { id: 'custom', hex: '#FFFFFF', label: 'surfaceCustom', hint: 'surfaceCustomHint' },
@@ -1147,6 +1157,28 @@ async function imageSourceToFile(source: string, name: string) {
   return new File([blob], name, { type: blob.type || 'image/png' });
 }
 
+async function flattenImageToWhiteMatte(file: File) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('Canvas is unavailable.');
+    context.fillStyle = '#FFFFFF';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(bitmap, 0, 0);
+    const blob = await canvasBlob(canvas, 'image/jpeg', 0.95);
+    if (!blob) throw new Error('White matte could not be created.');
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'gift-render-input';
+    return new File([blob], `${baseName}-white.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } finally {
+    bitmap.close();
+  }
+}
+
 async function apiErrorMessage(response: Response) {
   const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
   return { configuration: payload.error === 'configuration', reason: payload.error, message: payload.message } satisfies GiftAiClientError;
@@ -1163,28 +1195,54 @@ function editClientErrorMessage(error: unknown, language: GiftLanguage) {
 }
 
 function surfaceEffectPrompt(language: GiftLanguage, effect: SurfaceEffectId, paintColor: string) {
+  const targetColor = effect === 'transparent'
+    ? ''
+    : effect === 'bronze'
+      ? '#9A5A27'
+      : effect === 'silver'
+        ? '#B9C1CC'
+        : effect === 'red'
+          ? '#E3262E'
+          : effect === 'brown'
+            ? '#252525'
+            : effect === 'black'
+              ? '#151922'
+              : effect === 'glass'
+                ? '#7B8794'
+                : paintColor.toUpperCase();
   const prompts: Record<SurfaceEffectId, { zh: string; en: string }> = {
-    bronze: { zh: '克制的铜做旧表面，带细腻古铜色与自然旧化层次，具有高级纪念感', en: 'a restrained antique-bronze surface with subtle patina and a premium commemorative appearance' },
-    transparent: { zh: '透明树脂或透明亚克力般的通透表面，边缘有清晰折射和高光，主体仍保持完整可打印实体结构', en: 'a clear transparent-resin or acrylic-like surface with crisp refraction and highlights while retaining a complete printable solid form' },
-    silver: { zh: '均匀精致的金属银表面，具有现代工业感与受控的金属高光', en: 'a refined metallic-silver surface with modern industrial character and controlled metallic highlights' },
-    red: { zh: '均匀亮红色高光表面，颜色醒目饱满，不使用渐变、拼色或其他材质色', en: 'a uniform bright-red glossy surface with vivid saturated color and no gradients, color blocking, or secondary materials' },
-    brown: { zh: '均匀亮棕色高光表面，色调温暖沉稳，不使用渐变、拼色或其他材质色', en: 'a uniform glossy bright-brown surface with a warm steady tone and no gradients, color blocking, or secondary materials' },
-    black: { zh: '均匀亮黑色高光表面，呈现克制专业的高级质感，不使用其他材质色', en: 'a uniform glossy black surface with a restrained premium professional appearance and no secondary material colors' },
-    glass: { zh: '琉璃灰原色表面，保留灰色半透明材质与温润玻璃光泽', en: 'an original glass-gray surface with translucent gray material and a soft glass-like sheen' },
-    custom: { zh: `均匀的自定义颜色 ${paintColor} 表面，不使用渐变、拼色或其他材质色`, en: `a uniform custom-color ${paintColor} surface with no gradients, color blocking, or secondary material colors` },
+    bronze: { zh: '整件使用唯一的古铜色纯色喷漆，保持克制的纪念感，不使用双色旧化、金色点缀或原图颜色', en: 'one uniform antique-bronze spray-paint color across the entire gift, with a restrained commemorative appearance and no two-tone patina, gold accents, or original-image colors' },
+    transparent: { zh: '无色透明的玻璃或透明亚克力材质，不带任何红色、金色、棕色、灰色或原图颜色；仅通过真实透光、折射、边缘高光和透明厚度表现材质，主体仍保持完整可打印实体结构', en: 'a completely colorless transparent glass or clear acrylic material with no red, gold, brown, gray, or original-image tint; show the material only through realistic transmission, refraction, edge highlights, and transparent thickness while retaining a complete printable solid form' },
+    silver: { zh: '整件使用唯一的亮银色汽车金属漆，平滑清漆层和明亮中性高光，禁止出现第二种颜色、裸金属或双色点缀', en: 'one uniform bright silver automotive metallic paint across the entire gift, with a smooth clearcoat and bright neutral specular highlights; no second color, bare metal, or two-tone accents' },
+    red: { zh: '整件使用唯一的亮红色汽车金属漆，平滑清漆层和金属漆面高光，禁止金色点缀、渐变、拼色或其他材质色', en: 'one uniform bright red automotive metallic paint across the entire gift, with a smooth clearcoat and metallic-paint highlights; no gold accents, gradients, color blocking, or secondary materials' },
+    brown: { zh: '整件使用唯一的磨砂黑喷漆，呈现低光泽、均匀的哑光表面，禁止亮面高光、金属色、渐变、拼色或其他材质色', en: 'one uniform opaque matte-black paint across the entire gift, with an even low-gloss matte surface; no glossy highlights, metallic color, gradients, color blocking, or secondary materials' },
+    black: { zh: '整件使用唯一的亮黑色汽车金属漆，平滑清漆层和金属漆面高光，禁止出现第二种颜色或其他材质色', en: 'one uniform glossy black automotive metallic paint across the entire gift, with a smooth clearcoat and metallic-paint highlights; no second color or secondary material colors' },
+    glass: { zh: '整件使用唯一的不透明哑灰色喷漆，呈现均匀低光泽的哑光表面；不是玻璃、不是透明件，不保留原图颜色', en: 'one uniform opaque matte-gray paint across the entire gift with an even low-gloss matte surface; not glass, not translucent, and with no original-image colors' },
+    custom: { zh: `整件使用唯一的自定义颜色 ${paintColor} 亮面喷漆，带平滑清漆层和自然高光，覆盖主体、底座和所有细节，禁止渐变、拼色或其他材质色`, en: `one uniform glossy spray-paint color ${paintColor} across the entire gift, with a smooth clearcoat and natural specular highlights covering the body, base, and every detail; no gradients, color blocking, or secondary material colors` },
   };
-  return prompts[effect][language];
+  if (effect === 'transparent') return prompts[effect][language];
+  const monochromeRule = language === 'zh'
+    ? `必须严格执行单色纯色喷漆：礼品主体、底座、人物、动物、配件和所有细节全部覆盖为同一个不透明颜色 ${targetColor}。完全覆盖并移除原图中的红色、金色、肤色、毛发色和任何其他原始颜色。禁止双色、拼色、局部保留原色、彩色纹理、图案、渐变、不同颜色金属件、透明区域、未上色区域或第二种点缀色；只允许当前目标工艺要求的同色金属漆高光、清漆层高光或中性明暗变化，不能引入另一种颜色。`
+    : `Strict single-color spray paint: cover the entire gift, including the body, base, figures, animals, accessories, and every detail, with exactly one opaque color ${targetColor}. Completely overwrite and remove all original red, gold, skin, hair, and other source colors. No two-tone treatment, color blocking, preserved source colors, colored textures, patterns, gradients, differently colored metal parts, transparent regions, unpainted regions, or accent colors; only the requested same-color metallic-paint highlights, clearcoat highlights, or neutral-light shading may vary brightness without introducing another color.`;
+  return `${prompts[effect][language]}. ${monochromeRule}`;
 }
 
 function renderPrompt(language: GiftLanguage, brief: string, tags: string[], effect: SurfaceEffectId, paintColor: string) {
   const finishText = surfaceEffectPrompt(language, effect, paintColor);
   const request = brief.trim() || (language === 'zh' ? '根据客户画像设计一件商务礼品' : 'Design a business gift from the customer profile');
-  return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, 3D-printable desk gift as a product render. ${finishText}. Fully transparent background with a real alpha channel; no backdrop, floor plane, cast shadow, contact shadow, model shadow, or detached shadow. The object must be one watertight closed single-shell solid: every part physically joined to the main body, self-supporting, with no floating, suspended, disconnected, intersecting, open, paper-thin, or fragile parts. Use a stable integrated base, closed solid form, clear silhouette, manufacturable thickness, and geometry suitable for resin 3D printing. Use even neutral studio lighting without shadows. One centered object occupying more than 70% of the image. No packaging, hands, text, logo, or watermark. Three-quarter front view.`;
+  const transparentRule = effect === 'transparent'
+    ? (language === 'zh'
+      ? '透明件必须是无色透明玻璃或透明亚克力效果，严禁把原图的红色、金色或其他颜色保留为透明材质的色调；不得使用有色玻璃、彩色树脂或染色透明效果。'
+      : 'The transparent piece must be colorless clear glass or transparent acrylic. Never preserve the original red, gold, or any other image colors as a tint; do not use colored glass, colored resin, or dyed transparency.')
+    : (language === 'zh'
+      ? '这是单色纯色喷漆效果：整件礼品只能使用一个不透明颜色，必须覆盖主体、底座和所有细节；禁止保留原图颜色、双色、拼色、渐变、彩色纹理、不同颜色金属件、透明区域和任何第二种点缀色，只允许当前工艺对应的同色金属漆高光、清漆层高光或中性光照造成明暗变化。'
+      : 'This is a single-color spray-paint finish: the entire gift must use exactly one opaque color covering the body, base, and every detail. Do not preserve original colors and do not use two-tone treatment, color blocking, gradients, colored textures, differently colored metal parts, transparent regions, or any second accent color; only the requested same-color metallic-paint highlights, clearcoat highlights, and neutral-light shading may vary brightness.');
+  return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, production-ready desk gift render for SLA resin 3D printing. ${finishText}. ${transparentRule} Apply these SLA engineering constraints: use a nominal 1.5 mm wall thickness for shell-like areas and never create any wall, rod, blade, edge, connector, relief, or isolated detail below 0.5 mm; keep unsupported surfaces at no more than 45 degrees from vertical; use rounded internal corners and manufacturable transitions; connect every figure, ornament, weapon, accessory, ring, cable, gear, leaf, and decorative element to the main body or stable integrated base; use one watertight closed single-shell solid with a clear silhouette and accessible cleaning and drainage paths. Prefer a solid form; never create an inaccessible sealed hollow cavity, and if a hollow cavity is essential, include functional drain and vent holes with a continuous resin drainage path. Never use floating, suspended, disconnected, intersecting, non-manifold, open, zero-thickness, paper-thin, fragile, sharp-edged, unsupported large-span, tiny-text, texture-only, or loose-particle details. Use the requested surface finish; if no finish is specified, use a neutral matte-gray SLA resin appearance. Use a uniform pure white background only; no transparency, checkerboard, backdrop texture, floor plane, cast shadow, contact shadow, model shadow, detached shadow, gray patch, halo, extra object, packaging, hands, text, logo, or watermark. Use even neutral studio lighting. One centered object occupying more than 70% of the image. Three-quarter front view.`;
 }
 
 function surfaceEffectBackend(effect: SurfaceEffectId, paintColor: string) {
   if (effect === 'bronze') return { finishType: 'bronze' as const, paintColor: null };
-  if (effect === 'transparent' || effect === 'glass') return { finishType: 'other' as const, paintColor: null };
+  if (effect === 'transparent') return { finishType: 'other' as const, paintColor: null };
   return { finishType: 'paint' as const, paintColor };
 }
 
@@ -1196,11 +1254,22 @@ function restoredSurfaceEffect(finishType: string | null | undefined, paintColor
 }
 
 function whiteBackgroundPrompt() {
-  return 'Remove the entire background, background text, watermark-like marks, props, floor, shadows, and unrelated elements. Preserve the exact subject geometry, pose, silhouette, proportions, camera angle, and complete supporting base. Keep every part that physically belongs to the sculpture or gift. Ensure the depicted gift is one watertight closed single-shell solid with every component physically joined and self-supporting; remove or merge any floating, disconnected, open, paper-thin, or fragile detail that would not be printable. Center the complete isolated subject on a fully transparent background with a real alpha channel. Do not add a white or gray backdrop, checkerboard, floor, cast shadow, contact shadow, model shadow, or halo. Use even neutral lighting without shadows and clean, sharp subject edges. Do not crop or redesign the intended gift.';
+  return 'Create a clean product image of the exact main subject in the uploaded image on a uniform pure white background for 3D model generation and surface rendering. This is an isolation task, not a redesign or a new generation: do not repaint, redraw, simplify, crop, reframe, or reconstruct the object. Preserve every pixel and every physically connected part of the complete subject, including thin edges, limbs, hair, weapons, white or pale parts, glossy or translucent parts, dark parts, fine details, and the entire supporting base. Remove only clearly unrelated props and marks outside the subject. Never treat a color, brightness, reflection, or low contrast as proof that a subject part is background, and never cut holes through the subject. Keep the original geometry, pose, silhouette, proportions, camera angle, and framing. Use a plain solid white background only; do not draw transparency, a checkerboard pattern, gray patches, floor, cast shadow, contact shadow, model shadow, halo, extra objects, text, logo, or watermark. Use crisp natural edges and keep the complete centered object intact.';
+}
+
+function imageSurfaceRenderPrompt(language: GiftLanguage, effect: SurfaceEffectId, paintColor: string) {
+  const finishRule = effect === 'transparent'
+    ? (language === 'zh'
+      ? '透明件必须保持无色，呈现玻璃或透明亚克力的真实透光、折射和边缘高光；严禁红色、金色、棕色、灰色、有色玻璃、彩色树脂或原图颜色污染。'
+      : 'The transparent piece must remain colorless, showing realistic glass or clear-acrylic transmission, refraction, and edge highlights; never add red, gold, brown, gray, colored glass, colored resin, or any tint from the original image.')
+    : (language === 'zh'
+      ? '强制整件单色：把输入图中的所有原始颜色和材质全部替换为所选唯一颜色，包括红色、金色、肤色、毛发、金属件、武器、服饰、装饰和底座；任何位置都不得出现第二种颜色。'
+      : 'Enforce one color over the entire gift: replace every original color and material in the input, including red, gold, skin, hair, metal parts, weapons, clothing, decorations, and the base, with the selected single color. No second color may appear anywhere.');
+  return `${surfaceEffectPrompt(language, effect, paintColor)}. ${finishRule} Re-render the exact same complete subject from the input image on a uniform pure white background for product preview and 3D model generation. Preserve the complete geometry, pose, silhouette, proportions, camera angle, framing, every connected component, thin edge, limb, accessory, and the entire supporting base. Change only the requested surface finish. Do not crop, simplify, redesign, remove parts, add parts, create holes, or alter the structure. Output an opaque image on a plain solid white background; do not output transparency, a checkerboard pattern, gray or black patches, floor, cast shadow, contact shadow, model shadow, halo, unrelated objects, text, logo, or watermark. Use crisp natural edges and neutral studio lighting.`;
 }
 
 function monochromePaintPrompt(paintColor: string) {
-  return `Re-render the complete isolated subject in exactly one uniform matte spray paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. The gift must remain one watertight closed single-shell solid with every component physically joined and self-supporting; no floating, suspended, disconnected, open, paper-thin, or fragile parts. Remove original surface colors, patterns, text, and material variation. No gradients, color blocking, accent colors, metallic parts, or secondary materials. Keep a fully transparent background with a real alpha channel; do not add a white or gray backdrop, floor, cast shadow, contact shadow, model shadow, or halo. Use even neutral lighting without shadows. Do not crop or redesign the intended gift.`;
+  return `Re-render the complete isolated subject in exactly one uniform glossy spray-paint color ${paintColor}. Preserve the exact geometry, pose, silhouette, proportions, camera angle, complete supporting base, and framing. The gift must remain one watertight closed single-shell solid with every component physically joined and self-supporting; no floating, suspended, disconnected, open, paper-thin, or fragile parts. Remove original surface colors, patterns, text, and material variation. No gradients, color blocking, accent colors, differently colored metal parts, or secondary materials; only same-color clearcoat highlights and neutral-light shading are allowed. Use a plain solid pure white background; do not output transparency, a checkerboard pattern, floor, cast shadow, contact shadow, model shadow, or halo. Use even neutral lighting without shadows. Do not crop or redesign the intended gift.`;
 }
 
 function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResumeConsumed }: { language: GiftLanguage; onOrder: (model: GiftModel) => void; onDraftUpdated: () => void; resumeDraft?: GiftDraftResume | null; onResumeConsumed?: () => void }) {
@@ -1210,6 +1279,8 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [imageOriginalUrl, setImageOriginalUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageRenderInputFile, setImageRenderInputFile] = useState<File | null>(null);
+  const [imageRenderInputUrl, setImageRenderInputUrl] = useState<string | null>(null);
   const [imageDraftRequestId, setImageDraftRequestId] = useState<number | null>(null);
   const [imagePreparedAssetId, setImagePreparedAssetId] = useState<number | null>(null);
   const [imagePaintAssetId, setImagePaintAssetId] = useState<number | null>(null);
@@ -1217,6 +1288,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [imagePreparationFailed, setImagePreparationFailed] = useState(false);
   const [imagePaintPreview, setImagePaintPreview] = useState<string | null>(null);
   const [imagePaintGenerating, setImagePaintGenerating] = useState(false);
+  const [imageSurfaceEffect, setImageSurfaceEffect] = useState<SurfaceEffectId | null>(null);
   const [imagePreparing, setImagePreparing] = useState(false);
   const [imagePreparationNotice, setImagePreparationNotice] = useState<string | null>(null);
   const imagePreparationIdRef = useRef(0);
@@ -1232,6 +1304,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const profileStepRef = useRef<HTMLDivElement>(null);
   const briefStepRef = useRef<HTMLDivElement>(null);
   const surfaceStepRef = useRef<HTMLDivElement>(null);
+  const imageUploadStepRef = useRef<HTMLDivElement>(null);
+  const imageSurfaceStepRef = useRef<HTMLDivElement>(null);
+  const imageModelStepRef = useRef<HTMLDivElement>(null);
   const [finish, setFinish] = useState<FinishMode>('paint');
   const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId | null>(null);
   const [paintColor, setPaintColor] = useState('#FFFFFF');
@@ -1257,6 +1332,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
   const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
   const [previewRender, setPreviewRender] = useState<{ url: string; index: number } | null>(null);
+  const [previewDetailImage, setPreviewDetailImage] = useState<{ url: string; title: string } | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
   const [pendingResumeModel, setPendingResumeModel] = useState(false);
   const [pendingResumeBriefModel, setPendingResumeBriefModel] = useState(false);
@@ -1281,6 +1357,10 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   useEffect(() => () => {
     if (imageOriginalUrl) URL.revokeObjectURL(imageOriginalUrl);
   }, [imageOriginalUrl]);
+
+  useEffect(() => () => {
+    if (imageRenderInputUrl) URL.revokeObjectURL(imageRenderInputUrl);
+  }, [imageRenderInputUrl]);
 
   useEffect(() => {
     if (!paintMenuOpen) return;
@@ -1345,13 +1425,15 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setProfileSelections(restoredProfileSelections);
     setBrief(request.requestNotes || buildGiftBrief(language, restoredProfileSelections));
     const imageAttachments = [...resumeDraft.attachments].filter((file) => file.contentType?.startsWith('image/'));
+    const preparedImageAsset = [...imageAttachments].reverse().find((file) => /^white_background\./i.test(file.filename || ''));
+    const surfaceImageAsset = [...imageAttachments].reverse().find((file) => /^surface_preview\./i.test(file.filename || ''));
     const imageAsset = [...imageAttachments].reverse().find((file) => file.assetKind === 'reference_image' && /^selected-gift-render\./i.test(file.filename))
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'render_image')
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'reference_image')
       || [...imageAttachments].reverse().find((file) => file.assetKind === 'model_preview');
     const isBriefDraft = savedSource === 'ai_brief'
-      || imageAsset?.assetKind === 'render_image'
       || /^selected-gift-render\./i.test(imageAsset?.filename || '');
+    const restoredImageAsset = isBriefDraft ? imageAsset : preparedImageAsset || imageAsset;
     const modelAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_file');
     const modelPreviewAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview');
     const modelPreview3dAsset = [...resumeDraft.attachments].reverse().find((file) => file.assetKind === 'model_preview_3d');
@@ -1384,29 +1466,36 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
 
     async function restoreImage() {
-      if (!imageAsset) {
+      if (!restoredImageAsset) {
         onResumeConsumed?.();
         return;
       }
       try {
-        const file = await imageSourceToFile(`/api/gift/assets/${imageAsset.assetId}`, imageAsset.filename || 'gift-draft.png');
+        const file = await imageSourceToFile(`/api/gift/assets/${restoredImageAsset.assetId}`, restoredImageAsset.filename || 'gift-draft.png');
         if (cancelled) return;
         const originalUrl = URL.createObjectURL(file);
         const preparedUrl = URL.createObjectURL(file);
+        const renderInput = isBriefDraft ? null : await flattenImageToWhiteMatte(file);
         setImageDraftRequestId(request.id);
         setImageOriginalFile(file);
         setImageOriginalUrl(originalUrl);
         setImageFile(file);
         setImageUrl(preparedUrl);
-        setImagePreparedAssetId(imageAsset.assetId);
-        setImageView('prepared');
+        setImageRenderInputFile(renderInput);
+        setImageRenderInputUrl(renderInput ? URL.createObjectURL(renderInput) : null);
+        setImagePreparedAssetId(restoredImageAsset.assetId);
+        if (!isBriefDraft && surfaceImageAsset) {
+          setImagePaintAssetId(surfaceImageAsset.assetId);
+          setImagePaintPreview(`/api/gift/assets/${surfaceImageAsset.assetId}`);
+        }
+        setImageView(!isBriefDraft && surfaceImageAsset ? 'paint' : 'prepared');
         setImagePreparationFailed(false);
         setImagePreparing(false);
         setImagePreparationNotice(labels.imagePrepared);
         if (resumeAction === 'model' && isBriefDraft) {
           setMode('brief');
           setBriefDraftRequestId(request.id);
-          const restoredImage = { assetId: imageAsset.assetId, url: `/api/gift/assets/${imageAsset.assetId}` };
+          const restoredImage = { assetId: restoredImageAsset.assetId, url: `/api/gift/assets/${restoredImageAsset.assetId}` };
           setRenderImages([restoredImage]);
           setRenderSlots([{ status: 'ready', image: restoredImage, percent: 100, elapsedMs: 0 }]);
           setSelectedRender(0);
@@ -1420,7 +1509,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         } else {
           setMode('brief');
           setBriefDraftRequestId(request.id);
-          const restoredImage = { assetId: imageAsset.assetId, url: `/api/gift/assets/${imageAsset.assetId}` };
+          const restoredImage = { assetId: restoredImageAsset.assetId, url: `/api/gift/assets/${restoredImageAsset.assetId}` };
           setRenderImages([restoredImage]);
           setRenderSlots([{ status: 'ready', image: restoredImage, percent: 100, elapsedMs: 0 }]);
           setSelectedRender(0);
@@ -1446,14 +1535,18 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     sourceAssetId?: number | null;
     stage: string;
     title: string;
+    finishType?: string;
+    paintColor?: string | null;
+    monochromeColor?: string | null;
   }) {
     const formData = new FormData();
     formData.set('image', file, file.name || 'gift-reference.png');
     formData.set('prompt', prompt);
     formData.set('stage', options.stage);
     formData.set('draftTitle', options.title);
-    formData.set('finishType', finish);
-    if (finish === 'paint') formData.set('paintColor', paintColor);
+    formData.set('finishType', options.finishType || finish);
+    if (options.paintColor || (!options.finishType && finish === 'paint')) formData.set('paintColor', options.paintColor || paintColor);
+    if (options.monochromeColor) formData.set('monochromeColor', options.monochromeColor);
     if (options.draftRequestId) formData.set('draftRequestId', String(options.draftRequestId));
     if (options.sourceAssetId) formData.set('sourceAssetId', String(options.sourceAssetId));
     const response = await fetch('/api/gift/ai/edit', {
@@ -1473,6 +1566,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   async function prepareImageForModel(sourceFile: File, preparationId: number) {
     imagePaintIdRef.current += 1;
     setImagePaintPreview(null);
+    setImageSurfaceEffect(null);
     setImagePaintGenerating(false);
     setImagePreparing(true);
     setImagePreparationFailed(false);
@@ -1481,7 +1575,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       const compressedSource = await compressModelImage(sourceFile);
       if (imagePreparationIdRef.current !== preparationId) return;
       setImageOriginalFile(compressedSource.file);
-      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'gift-transparent-background.png', {
+      const edited = await requestImageEdit(compressedSource.file, whiteBackgroundPrompt(), 'white_background.png', {
         draftRequestId: imageDraftRequestId,
         stage: 'white_background',
         title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
@@ -1490,15 +1584,21 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       setImageDraftRequestId(edited.draftRequestId);
       const prepared = await compressModelImage(edited.file);
       if (imagePreparationIdRef.current !== preparationId) return;
+      const renderInput = await flattenImageToWhiteMatte(prepared.file);
+      if (imagePreparationIdRef.current !== preparationId) return;
       setImagePreparedAssetId(prepared.compressed ? null : edited.assetId);
       setImageFile(prepared.file);
       setImageUrl(prepared.compressed ? URL.createObjectURL(prepared.file) : edited.source);
+      setImageRenderInputFile(renderInput);
+      setImageRenderInputUrl(URL.createObjectURL(renderInput));
       setImageView('prepared');
       setImagePreparationNotice(labels.imagePrepared);
     } catch (error) {
       if (imagePreparationIdRef.current !== preparationId) return;
       setImageFile(null);
       setImageUrl(null);
+      setImageRenderInputFile(null);
+      setImageRenderInputUrl(null);
       setImageView('original');
       setImagePreparationFailed(true);
       setImagePreparationNotice(labels.imagePreparationFailed);
@@ -1515,9 +1615,12 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setImageOriginalUrl(file ? URL.createObjectURL(file) : null);
     setImageFile(null);
     setImageUrl(null);
+    setImageRenderInputFile(null);
+    setImageRenderInputUrl(null);
     setImageView('original');
     setImagePreparationFailed(false);
     setImagePaintPreview(null);
+    setImageSurfaceEffect(null);
     setImagePreparedAssetId(null);
     setImagePaintAssetId(null);
     setImagePaintGenerating(false);
@@ -1539,25 +1642,36 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     await prepareImageForModel(imageOriginalFile, preparationId);
   }
 
-  async function generateImagePaintPreview() {
-    if (!imageFile || imagePreparing || imagePaintGenerating) return;
+  async function generateImageSurfacePreview(effect = imageSurfaceEffect, color = paintColor) {
+    if ((!imageRenderInputFile && !imageFile) || !effect || imagePreparing || imagePaintGenerating) return;
     const paintId = imagePaintIdRef.current + 1;
     imagePaintIdRef.current = paintId;
     clearAiError();
     setImagePaintGenerating(true);
+    setImageSurfaceEffect(effect);
+    setImagePaintPreview(null);
+    setImagePaintAssetId(null);
+    setImageView('prepared');
     try {
-      const edited = await requestImageEdit(imageFile, monochromePaintPrompt(paintColor), 'gift-paint-preview.png', {
+      const preset = surfaceEffectPresets.find((item) => item.id === effect);
+      const effectColor = effect === 'custom' ? color : preset?.hex || color;
+      const backendFinish = surfaceEffectBackend(effect, effectColor);
+      const renderInput = imageRenderInputFile || await flattenImageToWhiteMatte(imageFile as File);
+      const edited = await requestImageEdit(renderInput, imageSurfaceRenderPrompt(language, effect, effectColor), `gift-${effect}-surface-preview.png`, {
         draftRequestId: imageDraftRequestId,
         sourceAssetId: imagePreparedAssetId,
-        stage: 'paint_preview',
+        stage: 'surface_preview',
         title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+        finishType: backendFinish.finishType,
+        paintColor: backendFinish.paintColor,
+        monochromeColor: effect === 'transparent' ? null : effectColor,
       });
       if (imagePaintIdRef.current !== paintId) return;
       setImageDraftRequestId(edited.draftRequestId);
       setImagePaintAssetId(edited.assetId);
       setImagePaintPreview(edited.source);
       setImageView('paint');
-      setImagePreparationNotice(labels.paintPreviewReady);
+      setImagePreparationNotice(labels.imageSurfaceReady);
     } catch (error) {
       if (imagePaintIdRef.current !== paintId) return;
       setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
@@ -1566,7 +1680,46 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
   }
 
-  async function waitForWhiteModel(file: File, options: { draftRequestId?: number | null; sourceAssetId?: number | null; title: string }) {
+  function chooseImageSurfaceEffect(effect: SurfaceEffectId) {
+    const preset = surfaceEffectPresets.find((item) => item.id === effect);
+    setImageSurfaceEffect(effect);
+    setFinish(effect === 'bronze' ? 'bronze' : 'paint');
+    setImagePaintPreview(null);
+    setImagePaintAssetId(null);
+    setImageView('prepared');
+    if (effect === 'custom') {
+      if (paintColor === '#FFFFFF') setPaintColorInput('#FFFFFF');
+      setPaintMenuOpen(true);
+      window.setTimeout(() => {
+        customColorInputRef.current?.focus();
+        customColorInputRef.current?.select();
+      }, 0);
+      return;
+    }
+    const effectColor = preset?.hex || paintColor;
+    if (preset && !['bronze', 'transparent', 'glass'].includes(effect)) {
+      setPaintColor(effectColor);
+      setPaintColorInput(effectColor);
+    }
+    setPaintMenuOpen(false);
+    void generateImageSurfacePreview(effect, effectColor);
+  }
+
+  function applyImageCustomColor(value: string) {
+    const normalized = value.toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(normalized)) return;
+    setPaintColor(normalized);
+    setPaintColorInput(normalized);
+    setImageSurfaceEffect('custom');
+    setPaintMenuOpen(false);
+    void generateImageSurfacePreview('custom', normalized);
+  }
+
+  async function generateImagePaintPreview() {
+    await generateImageSurfacePreview(imageSurfaceEffect || 'custom', paintColor);
+  }
+
+  async function waitForWhiteModel(file: File, options: { draftRequestId?: number | null; sourceAssetId?: number | null; title: string; finishType?: string; paintColor?: string | null }) {
     setModelProgress({ percent: 0, stage: labels.modelProgressPreparing });
     let prepared: Awaited<ReturnType<typeof compressModelImage>>;
     try {
@@ -1579,10 +1732,12 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     const formData = new FormData();
     formData.set('image', prepared.file, prepared.file.name || 'gift-reference.webp');
     formData.set('draftTitle', options.title);
-    formData.set('finishType', finish);
+    const submittedFinish = options.finishType || finish;
+    const submittedPaintColor = options.paintColor === undefined ? paintColor : options.paintColor;
+    formData.set('finishType', submittedFinish);
     formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
     formData.set('brief', brief);
-    if (finish === 'paint') formData.set('paintColor', paintColor);
+    if (submittedFinish === 'paint' && submittedPaintColor) formData.set('paintColor', submittedPaintColor);
     if (options.draftRequestId) formData.set('draftRequestId', String(options.draftRequestId));
     if (options.sourceAssetId && !prepared.compressed) formData.set('sourceAssetId', String(options.sourceAssetId));
     const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
@@ -1637,14 +1792,20 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   }
 
   async function generateImageModel() {
-    if (!imageFile) return;
+    if (!imagePaintPreview || !imageSurfaceEffect) return;
     clearAiError();
     setImageStatus('generating');
     try {
-      const model = await waitForWhiteModel(imageFile, {
+      const renderedFile = await imageSourceToFile(imagePaintPreview, 'gift-surface-render.png');
+      const selectedPreset = surfaceEffectPresets.find((item) => item.id === imageSurfaceEffect);
+      const effectColor = imageSurfaceEffect === 'custom' ? paintColor : selectedPreset?.hex || paintColor;
+      const backendFinish = surfaceEffectBackend(imageSurfaceEffect, effectColor);
+      const model = await waitForWhiteModel(renderedFile, {
         draftRequestId: imageDraftRequestId,
-        sourceAssetId: imagePreparedAssetId,
+        sourceAssetId: imagePaintAssetId,
         title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+        finishType: backendFinish.finishType,
+        paintColor: backendFinish.paintColor,
       });
       setImageDraftRequestId(model.draftRequestId || imageDraftRequestId);
       setImageModel(model);
@@ -1733,6 +1894,11 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function scrollToImageStep(step: 'upload' | 'surface' | 'model') {
+    const target = step === 'upload' ? imageUploadStepRef.current : step === 'surface' ? imageSurfaceStepRef.current : imageModelStepRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   async function generateRenders() {
     if ((!brief.trim() && selectedProfileTags.length === 0) || !surfaceEffect) return;
     clearAiError();
@@ -1759,6 +1925,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           businessScene: selectedProfileTags.slice(0, 4).join(' · '),
           finishType: backendFinish.finishType,
           paintColor: backendFinish.paintColor,
+          monochromeColor: surfaceEffect === 'transparent' ? null : (surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor),
           brief,
           specifications: { source: 'ai_brief', profileTags: selectedProfileTags, surfaceEffect },
         }),
@@ -1832,6 +1999,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
       formData.set('brief', brief);
       if (backendFinish.paintColor) formData.set('paintColor', backendFinish.paintColor);
+      if (surfaceEffect !== 'transparent') formData.set('monochromeColor', surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor);
       if (briefDraftRequestId) formData.set('draftRequestId', String(briefDraftRequestId));
       const selectedAssetId = selectedImage?.assetId;
       if (selectedAssetId) formData.set('sourceAssetId', String(selectedAssetId));
@@ -1881,7 +2049,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
   }
 
-  const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === surfaceEffect);
+  const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === (mode === 'image' ? imageSurfaceEffect : surfaceEffect));
   const surfaceSelectionEnabled = brief.trim().length > 0;
   const generatedModel: GiftModel = {
     id: 'ai-generated',
@@ -1899,7 +2067,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const displayedImageSource = imageView === 'paint'
     ? imagePaintPreview
     : imageView === 'prepared'
-      ? imageUrl
+      ? imageRenderInputUrl || imageUrl
       : imageOriginalUrl;
 
   if (mode === 'brief') return (
@@ -1980,6 +2148,85 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     </section>
   );
 
+  if (mode === 'image') return (
+    <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
+      <div className="grid border-b border-slate-200 md:grid-cols-2"><button type="button" className="flex items-start gap-4 bg-cyan-50/70 p-5 text-left shadow-[inset_0_-3px_0_#0891b2] transition md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#0b4f9c] text-white"><ImagePlus className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.imageMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.imageModeHint}</span></span></button><button type="button" onClick={() => setMode('brief')} className="flex items-start gap-4 border-t border-slate-200 bg-white p-5 text-left transition hover:bg-slate-50 md:border-l md:border-t-0 md:p-6"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-500"><Sparkles className="h-5 w-5" /></span><span><strong className="block text-sm font-black text-slate-950">{labels.briefMode}</strong><span className="mt-1 block text-xs font-medium leading-5 text-slate-500">{labels.briefModeHint}</span></span></button></div>
+
+      <nav aria-label={language === 'zh' ? '图片生成模型进度' : 'Image-to-model progress'} className="border-b border-slate-100 bg-white px-5 py-3 md:px-8">
+        <div className="mx-auto max-w-full overflow-x-auto">
+          <div className="mx-auto flex w-max min-w-fit items-center justify-center px-1">
+            {[
+              { key: 'upload' as const, label: language === 'zh' ? '上传图片（自动去除背景）' : 'Upload image (auto background removal)', complete: Boolean(imageUrl) && !imagePreparing },
+              { key: 'surface' as const, label: language === 'zh' ? '选择礼品表面效果' : 'Choose gift surface effect', complete: Boolean(imagePaintPreview) && !imagePaintGenerating },
+              { key: 'model' as const, label: language === 'zh' ? '确认生成 3D 模型' : 'Confirm 3D model generation', complete: imageStatus === 'ready' },
+            ].map((step, index, steps) => <div key={step.key} className="flex shrink-0 items-center">
+              <button type="button" onClick={() => scrollToImageStep(step.key)} className="group flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-slate-50">
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black transition ${step.complete ? 'bg-emerald-500 text-white' : 'bg-[#0b4f9c] text-white'}`}>{step.complete ? <Check className="h-4 w-4" strokeWidth={3} /> : index + 1}</span>
+                <span className={`truncate text-[11px] font-black transition md:text-xs ${step.complete ? 'text-emerald-700' : 'text-slate-700 group-hover:text-[#0b4f9c]'}`}>{step.label}</span>
+              </button>
+              {index < steps.length - 1 ? <span className={`mx-3 h-px w-8 md:mx-5 md:w-16 ${step.complete ? 'bg-emerald-300' : 'bg-slate-200'}`} aria-hidden="true" /> : null}
+            </div>)}
+          </div>
+        </div>
+      </nav>
+
+      {aiError ? <div className="mx-6 mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 md:mx-8">{aiError.configuration ? labels.aiConfigError : aiError.reason === 'approval' ? labels.aiApprovalError : aiError.reason === 'quota' ? labels.aiQuotaError : aiError.reason === 'validation' && aiError.message ? aiError.message : labels.aiRequestError}{!['validation', 'approval', 'quota'].includes(aiError.reason || '') && aiError.message ? <span className="mt-1 block text-xs font-medium opacity-75">{aiError.message}</span> : null}</div> : null}
+
+      <div className="p-5 md:p-8"><div className="mx-auto max-w-6xl space-y-5">
+        <div ref={imageUploadStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">1</span><div><h3 className="text-base font-black text-slate-950">{language === 'zh' ? '上传图片（自动去除背景）' : 'Upload image (automatic background removal)'}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '上传原始参考图片后，系统自动识别主体并去除背景，为后续礼品表面效果渲染做准备。' : 'Upload the original reference. The subject is isolated automatically before surface rendering.'}</p></div></div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <label className="group relative flex min-h-[330px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-cyan-300 bg-white p-4 text-center transition hover:border-cyan-500 hover:bg-cyan-50/30">
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; void chooseImage(file); }} />
+              {imageOriginalUrl ? <img src={imageOriginalUrl} alt={labels.imageOriginal} className="absolute inset-0 h-full w-full bg-white object-contain" /> : null}
+              <div className={imageOriginalUrl ? 'absolute bottom-4 left-4 rounded-md bg-slate-950/70 px-4 py-2 text-white backdrop-blur' : 'relative'}>{!imageOriginalUrl ? <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-cyan-50 text-[#0b4f9c]"><UploadCloud className="h-7 w-7" /></div> : null}<span className={`block text-sm font-black ${imageOriginalUrl ? 'text-white' : 'mt-4 text-slate-800'}`}>{imageOriginalUrl ? labels.replaceImage : labels.oneImage}</span>{!imageOriginalUrl ? <span className="mt-2 block max-w-xs text-xs font-medium leading-5 text-slate-500">{labels.oneImageHint}</span> : null}</div>
+              <span className="absolute left-3 top-3 rounded-md bg-white/90 px-2.5 py-1.5 text-[11px] font-black text-slate-700 shadow-sm backdrop-blur">{labels.imageOriginal}</span>
+            </label>
+
+            <div className="relative flex min-h-[330px] flex-col items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-4 text-center">
+              {imagePaintPreview || imageRenderInputUrl || imageUrl ? <button type="button" onClick={() => setPreviewDetailImage({ url: imagePaintPreview || imageRenderInputUrl || imageUrl || '', title: imagePaintPreview ? labels.imagePaintView : labels.imagePreparedView })} className="group absolute inset-0 cursor-zoom-in" aria-label={language === 'zh' ? '查看处理后图片大图' : 'View processed image full screen'}><img src={imagePaintPreview || imageRenderInputUrl || imageUrl || ''} alt={imagePaintPreview ? labels.imagePaintView : labels.imagePreparedView} className="absolute inset-0 h-full w-full bg-white object-contain transition duration-200 group-hover:scale-[1.01]" /><span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-slate-950/70 px-3 py-1.5 text-[11px] font-black text-white opacity-0 backdrop-blur transition group-hover:opacity-100">{language === 'zh' ? '点击查看大图' : 'Click to view large image'}</span></button> : <div className="flex flex-col items-center"><div className="grid h-14 w-14 place-items-center rounded-lg bg-slate-100 text-slate-400"><ImagePlus className="h-7 w-7" /></div><span className="mt-4 text-sm font-black text-slate-500">{language === 'zh' ? '处理后图片将在这里显示' : 'The processed image will appear here'}</span></div>}
+              <span className="absolute left-3 top-3 rounded-md bg-white/90 px-2.5 py-1.5 text-[11px] font-black text-slate-700 shadow-sm backdrop-blur">{imagePaintPreview ? labels.imagePaintView : labels.imagePreparedView}</span>
+              {imagePreparing || imagePaintGenerating ? <div className="absolute inset-0 grid place-items-center bg-white/88 backdrop-blur-sm"><div className="flex flex-col items-center gap-3 text-sm font-black text-cyan-800"><LoaderCircle className="h-8 w-8 animate-spin" />{imagePreparing ? labels.imagePreparingWhite : labels.imageSurfaceGenerating}</div></div> : null}
+            </div>
+          </div>
+          {imagePreparing || imagePreparationFailed || imageUrl ? <div className={`mt-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-xs font-bold ${imagePreparing ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : imagePreparationFailed ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}><span className="flex items-center gap-2">{imagePreparing ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" /> : imagePreparationFailed ? <X className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}{imagePreparing ? labels.imagePreparingWhite : imagePreparationFailed ? labels.imagePreparationFailed : labels.imagePrepared}</span>{imagePreparationFailed ? <button type="button" onClick={() => void retryImagePreparation()} className="shrink-0 underline underline-offset-2">{labels.imageRetryPreparation}</button> : null}</div> : null}
+        </div>
+
+        <div ref={imageSurfaceStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">2</span><div><h3 className="text-base font-black text-slate-950">{labels.imageSurfaceTitle}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.imageSurfaceHint}</p></div></div>
+          {!imageUrl || imagePreparing ? <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">{labels.imageSurfaceWaiting}</p> : null}
+          <div className={`mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 ${!imageUrl || imagePreparing ? 'opacity-55' : ''}`}>{surfaceEffectPresets.map((preset) => {
+            const active = imageSurfaceEffect === preset.id;
+            const isCustom = preset.id === 'custom';
+            const disabled = !imageUrl || imagePreparing || imagePaintGenerating;
+            const cardClassName = `min-h-24 rounded-xl border p-4 text-left transition ${active ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-sm'}`;
+            if (isCustom) return <div key={preset.id} ref={imagePaintMenuRef} className="relative">
+              <button type="button" disabled={disabled} onClick={() => chooseImageSurfaceEffect('custom')} className={`w-full ${cardClassName} disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:border-slate-200 disabled:hover:shadow-none`}><div className="flex items-center justify-between gap-3"><span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: active ? paintColor : preset.hex }} />{`${labels.surfaceCustom}：${active ? paintColor : preset.hex}`}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>
+              {active && paintMenuOpen ? <div role="dialog" aria-label={labels.customPaintColor} className="absolute left-0 top-[calc(100%+0.5rem)] z-40 w-full min-w-[240px] rounded-xl border border-cyan-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-black text-slate-900">{labels.customPaintColor}</span><button type="button" onClick={() => setPaintMenuOpen(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button></div>
+                <div className="mt-2 flex items-center gap-2"><span className="h-9 w-9 shrink-0 rounded-md border border-slate-200 shadow-inner" style={{ backgroundColor: /^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor }} /><input ref={customColorInputRef} type="text" value={paintColorInput} maxLength={7} placeholder="#RRGGBB" onChange={(event) => setPaintColorInput(event.target.value.toUpperCase())} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} onKeyDown={(event) => { if (event.key === 'Enter') applyImageCustomColor(paintColorInput); if (event.key === 'Escape') setPaintMenuOpen(false); }} className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-sm font-bold uppercase text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div>
+                <div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((colorPreset) => <button key={colorPreset.hex} type="button" onClick={() => applyImageCustomColor(colorPreset.hex)} title={language === 'zh' ? colorPreset.zh : colorPreset.en} className="relative aspect-square min-h-6 rounded-md border-2 border-white shadow-sm transition hover:-translate-y-0.5" style={{ backgroundColor: colorPreset.hex }} />)}</div>
+                <div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={/^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor} onChange={(event) => setPaintColorInput(event.target.value.toUpperCase())} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" />{language === 'zh' ? '取色器' : 'Picker'}</label><button type="button" disabled={!/^#[0-9A-F]{6}$/.test(paintColorInput)} onClick={() => applyImageCustomColor(paintColorInput)} className="h-8 rounded-md bg-[#0b4f9c] px-3 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{language === 'zh' ? '确定并生成' : 'Apply & render'}</button></div>
+              </div> : null}
+            </div>;
+            return <button key={preset.id} type="button" disabled={disabled} onClick={() => chooseImageSurfaceEffect(preset.id)} className={`${cardClassName} disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:border-slate-200 disabled:hover:shadow-none`}><div className="flex items-center justify-between gap-3"><span className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 shrink-0 rounded-full border border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: preset.hex }} />{labels[preset.label]}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0b4f9c]" /> : null}</div><p className="mt-2 text-[11px] font-medium leading-5 text-slate-500">{labels[preset.hint]}</p></button>;
+          })}</div>
+          <div className={`mt-5 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-bold ${imagePaintGenerating ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : imagePaintPreview ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : imagePaintPreview ? <CheckCircle2 className="h-4 w-4" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.imageSurfaceGenerating : imagePaintPreview ? labels.imageSurfaceReady : (language === 'zh' ? '选择表面效果后将自动生成最终礼品渲染图。' : 'Selecting an effect automatically creates the final gift render.')}</div>
+        </div>
+
+        <div ref={imageModelStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">3</span><div><h3 className="text-base font-black text-slate-950">{language === 'zh' ? '确认生成 3D 模型' : 'Confirm 3D model generation'}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '确认最终礼品渲染图后，系统按照该图片生成可打印白膜模型。' : 'Confirm the final gift render, then generate a printable white model from it.'}</p></div></div>
+          <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.imageModelRule}</span></div>{imageStatus === 'generating' && modelProgress ? null : <button type="button" onClick={generateImageModel} disabled={!imagePaintPreview || !imageSurfaceEffect || imagePaintGenerating || imagePreparing} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45"><Boxes className="h-5 w-5" />{labels.generateWhiteModel}</button>}</div>
+          {imageStatus === 'generating' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : null}
+          {imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-image-${Date.now()}`, generatedModelUrl: imageModel?.modelUrl, generatedModelAssetId: imageModel?.modelAssetId, previewAssetId: imageModel?.previewAssetId, draftRequestId: imageModel?.draftRequestId })} /> : null}
+        </div>
+      </div></div>
+      {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
+      {previewDetailImage ? <GiftZoomImageModal url={previewDetailImage.url} title={previewDetailImage.title} language={language} onClose={() => setPreviewDetailImage(null)} /> : null}
+    </section>
+  );
+
   return (
     <section id="ai-generate" className="relative z-10 overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="rounded-t-2xl border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8"><div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div><h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2><p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">{labels.aiDescription}</p></div>
@@ -1993,7 +2240,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
             <div>
               {imageOriginalUrl ? <div className="mb-3 flex flex-wrap gap-2">
                 <button type="button" onClick={() => setImageView('original')} className={`rounded-md px-3 py-2 text-xs font-black transition ${imageView === 'original' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imageOriginal}</button>
-                <button type="button" disabled={!imageUrl} onClick={() => setImageView('prepared')} className={`rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${imageView === 'prepared' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imagePreparedView}</button>
+                <button type="button" disabled={!imageUrl && !imageRenderInputUrl} onClick={() => setImageView('prepared')} className={`rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${imageView === 'prepared' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imagePreparedView}</button>
                 <button type="button" disabled={!imagePaintPreview} onClick={() => setImageView('paint')} className={`rounded-md px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${imageView === 'paint' ? 'bg-[#0b4f9c] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{labels.imagePaintView}</button>
               </div> : null}
               <label className="group relative flex min-h-[380px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-cyan-300 bg-cyan-50/40 p-5 text-center transition hover:border-cyan-500 hover:bg-cyan-50">
@@ -2022,7 +2269,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
                 <div className="flex items-start gap-3"><Palette className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h3 className="text-sm font-black text-slate-900">{labels.imagePaintPreviewTitle}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.imagePaintPreviewHint}</p></div></div>
                 <div className="mt-4 grid grid-cols-8 gap-2">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => choosePaintColor(preset.hex)} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-8 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div>
                 <div ref={imagePaintMenuRef} className="relative mt-3 flex items-center gap-2"><button type="button" onClick={() => { setPaintMenuOpen((current) => !current); window.setTimeout(() => { customColorInputRef.current?.focus(); customColorInputRef.current?.select(); }, 0); }} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 hover:border-cyan-400" aria-expanded={paintMenuOpen} aria-haspopup="dialog"><span className="h-5 w-7 rounded border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} />{labels.customPaintColor}</button>{paintMenuOpen ? <div role="dialog" aria-label={labels.customPaintColor} className="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-72 rounded-xl border border-cyan-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-center justify-between gap-3"><span className="text-xs font-black text-slate-900">{labels.customPaintColor}</span><button type="button" onClick={() => setPaintMenuOpen(false)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={language === 'zh' ? '关闭颜色输入' : 'Close color input'}><X className="h-4 w-4" /></button></div><div className="mt-2 flex items-center gap-2"><span className="h-9 w-9 shrink-0 rounded-md border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} /><label className="min-w-0 flex-1"><span className="sr-only">HEX</span><input ref={customColorInputRef} type="text" inputMode="text" value={paintColorInput} maxLength={7} placeholder="#FFFFFF" onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} onKeyDown={(event) => { if (event.key === 'Enter' && /^#[0-9A-F]{6}$/.test(paintColorInput)) { choosePaintColor(paintColorInput); setPaintMenuOpen(false); } if (event.key === 'Escape') setPaintMenuOpen(false); }} className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm font-bold uppercase text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label></div><div className="mt-3 flex items-center justify-between gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><input type="color" value={/^#[0-9A-F]{6}$/.test(paintColorInput) ? paintColorInput : paintColor} onChange={(event) => choosePaintColor(event.target.value)} className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0" aria-label={language === 'zh' ? '取色器' : 'Color picker'} />{language === 'zh' ? '取色器' : 'Picker'}</label><span className="text-[10px] font-bold text-slate-400">HEX · #RRGGBB</span><button type="button" disabled={!/^#[0-9A-F]{6}$/.test(paintColorInput)} onClick={() => { choosePaintColor(paintColorInput); setPaintMenuOpen(false); }} className="h-8 rounded-md bg-[#0b4f9c] px-3 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{language === 'zh' ? '确定' : 'Apply'}</button></div></div> : null}<input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} className="h-10 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 font-mono text-xs font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div>
-                <button type="button" onClick={() => void generateImagePaintPreview()} disabled={!imageFile || imagePreparing || imagePaintGenerating} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.generatingPaintPreview : labels.generatePaintPreview}</button>
+                <button type="button" onClick={() => void generateImagePaintPreview()} disabled={(!imageRenderInputFile && !imageFile) || imagePreparing || imagePaintGenerating} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.generatingPaintPreview : labels.generatePaintPreview}</button>
               </div>
 
               {imageStatus === 'generating' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : <button type="button" onClick={generateImageModel} disabled={!imageFile || imagePreparing} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_image_to_3d_click">{imagePreparing ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Boxes className="h-5 w-5" />}{imagePreparing ? labels.imagePreparingWhite : labels.generateWhiteModel}</button>}
@@ -2305,7 +2552,7 @@ function GiftModalPortal({ children }: { children: ReactNode }) {
   return mounted ? createPortal(children, document.body) : null;
 }
 
-function GiftRenderPreviewModal({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {
+function GiftZoomImageModal({ url, title, language, onClose, footer }: { url: string; title: string; language: GiftLanguage; onClose: () => void; footer?: ReactNode }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
@@ -2321,12 +2568,16 @@ function GiftRenderPreviewModal({ url, index, language, onClose, onSelect }: { u
     if (value <= 1) setOffset({ x: 0, y: 0 });
   }
   return <GiftModalPortal><div className="fixed inset-0 z-[9999] grid place-items-center bg-slate-950/80 p-3 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <div role="dialog" aria-modal="true" aria-label={language === 'zh' ? `礼品方案 ${index + 1} 大图` : `Gift concept ${index + 1} preview`} className="flex h-[min(860px,94vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white"><div><div className="text-sm font-black">{language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`}</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">{language === 'zh' ? '滚轮缩放，拖动查看细节' : 'Scroll to zoom and drag to inspect details'}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setZoomAndCenter(zoom - 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut className="h-4 w-4" /></button><span className="w-12 text-center font-mono text-xs font-bold text-slate-300">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoomAndCenter(zoom + 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => setZoomAndCenter(1)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '重置缩放' : 'Reset zoom'}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={onClose} className="ml-2 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button></div></div>
-      <div className={`relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_35%,#334155_0%,#0f172a_70%)] ${zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`} onWheel={(event) => { event.preventDefault(); setZoomAndCenter(zoom + (event.deltaY < 0 ? 0.15 : -0.15)); }} onPointerDown={(event) => { if (zoom <= 1) return; event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y }; }} onPointerMove={(event) => { if (!dragRef.current) return; setOffset({ x: dragRef.current.offsetX + event.clientX - dragRef.current.x, y: dragRef.current.offsetY + event.clientY - dragRef.current.y }); }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}><img src={url} alt={language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`} draggable={false} className="absolute left-1/2 top-1/2 max-h-[78vh] max-w-[90%] select-none object-contain" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${zoom})` }} /></div>
-      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-3"><span className="text-xs font-bold text-slate-400">{language === 'zh' ? '确认后可继续编辑方案' : 'You can continue editing after selecting'}</span><button type="button" onClick={() => { onSelect(); onClose(); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b77b7] px-5 text-xs font-black text-white transition hover:bg-[#08679d]"><Check className="h-4 w-4" />{language === 'zh' ? '选择此方案' : 'Choose this concept'}</button></div>
+    <div role="dialog" aria-modal="true" aria-label={`${title} ${language === 'zh' ? '大图' : 'preview'}`} className="flex h-[min(860px,94vh)] w-[min(1180px,96vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-white"><div><div className="text-sm font-black">{title}</div><div className="mt-0.5 text-[11px] font-medium text-slate-400">{language === 'zh' ? '滚轮缩放，拖动查看细节' : 'Scroll to zoom and drag to inspect details'}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setZoomAndCenter(zoom - 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '缩小' : 'Zoom out'}><ZoomOut className="h-4 w-4" /></button><span className="w-12 text-center font-mono text-xs font-bold text-slate-300">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoomAndCenter(zoom + 0.25)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '放大' : 'Zoom in'}><ZoomIn className="h-4 w-4" /></button><button type="button" onClick={() => setZoomAndCenter(1)} className="grid h-9 w-9 place-items-center rounded-md bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '重置缩放' : 'Reset zoom'}><RotateCcw className="h-4 w-4" /></button><button type="button" onClick={onClose} className="ml-2 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20" aria-label={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button></div></div>
+      <div className={`relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_50%_35%,#334155_0%,#0f172a_70%)] ${zoom > 1 ? 'cursor-grab active:cursor-grabbing' : ''}`} onWheel={(event) => { event.preventDefault(); setZoomAndCenter(zoom + (event.deltaY < 0 ? 0.15 : -0.15)); }} onPointerDown={(event) => { if (zoom <= 1) return; event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y }; }} onPointerMove={(event) => { if (!dragRef.current) return; setOffset({ x: dragRef.current.offsetX + event.clientX - dragRef.current.x, y: dragRef.current.offsetY + event.clientY - dragRef.current.y }); }} onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }}><img src={url} alt={title} draggable={false} className="absolute left-1/2 top-1/2 max-h-[78vh] max-w-[90%] select-none object-contain" style={{ transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${zoom})` }} /></div>
+      {footer ? <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-4 py-3">{footer}</div> : null}
     </div>
   </div></GiftModalPortal>;
+}
+
+function GiftRenderPreviewModal({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {
+  return <GiftZoomImageModal url={url} title={language === 'zh' ? `礼品方案 ${index + 1}` : `Gift concept ${index + 1}`} language={language} onClose={onClose} footer={<><span className="text-xs font-bold text-slate-400">{language === 'zh' ? '确认后可继续编辑方案' : 'You can continue editing after selecting'}</span><button type="button" onClick={() => { onSelect(); onClose(); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b77b7] px-5 text-xs font-black text-white transition hover:bg-[#08679d]"><Check className="h-4 w-4" />{language === 'zh' ? '选择此方案' : 'Choose this concept'}</button></>} />;
 }
 
 function GiftRenderPreviewModalLegacy({ url, index, language, onClose, onSelect }: { url: string; index: number; language: GiftLanguage; onClose: () => void; onSelect: () => void }) {

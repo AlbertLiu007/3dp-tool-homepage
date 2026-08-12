@@ -350,6 +350,8 @@ export async function persistGiftDraftGeneratedImage(input: {
     dataUrl?: string;
     url?: string;
     model?: string;
+    whiteBackground?: boolean;
+    whiteBackgroundProcessor?: string;
     transparentBackground?: boolean;
     transparentBackgroundProcessor?: string;
   };
@@ -373,22 +375,24 @@ export async function persistGiftDraftGeneratedImage(input: {
   } else {
     throw new GiftAccessError('Generated image is empty.', 502, 'validation');
   }
-  // The AI adapter already produces a transparent PNG. Do not run the
-  // flood-fill a second time: repeated matting can erode light subject edges.
-  // Keep the storage check for callers that provide an unnormalized image.
-  let transparentBuffer = buffer;
-  if (!input.image.transparentBackground) {
-    transparentBuffer = await createTransparentPng(buffer, 20 * 1024 * 1024).catch((error) => {
-      throw new GiftAccessError(error instanceof Error ? error.message : 'Generated image background could not be made transparent.', 502, 'validation');
-    });
-  }
+  // New AI image adapters normalize generated images to an opaque white
+  // background before they reach this persistence boundary. Keep those bytes
+  // unchanged so local and OSS-backed paths render the same image.
+  const generatedBuffer = buffer;
   const asset = await persistGiftDraftBufferAsset({
     actor: input.actor, requestId: input.requestId, kind: input.kind || 'render_image',
-    filename: input.filename.replace(/\.(?:jpe?g|webp|png)$/i, '') + '.png', contentType: 'image/png', buffer: transparentBuffer,
+    filename: input.filename.replace(/\.(?:jpe?g|webp|png)$/i, '') + '.png', contentType: 'image/png', buffer: generatedBuffer,
     metadata: {
       ...(input.metadata || {}),
-      transparentBackground: true,
-      transparentBackgroundProcessor: input.image.transparentBackgroundProcessor || 'sharp-edge-flood-fill-v2',
+      whiteBackground: input.image.whiteBackground !== false,
+      whiteBackgroundProcessor: input.image.whiteBackground
+        ? input.image.whiteBackgroundProcessor || 'sharp-adaptive-cutout-white-v1'
+        : undefined,
+      transparentBackground: Boolean(input.image.transparentBackground),
+      imageBackground: input.image.transparentBackground ? 'transparent' : 'white',
+      ...(input.image.transparentBackground
+        ? { transparentBackgroundProcessor: input.image.transparentBackgroundProcessor || 'legacy-transparent-asset' }
+        : {}),
       ...(input.image.model ? { imageModel: input.image.model } : {}),
     },
   });

@@ -2,7 +2,8 @@
 
 ## 服务关系
 
-- `wan2.7-image-pro`：根据文字与客户画像生成礼品工艺渲染图，也用于继续编辑已生成图片。
+- `grok-imagine-image-quality`：根据文字与客户画像生成礼品工艺渲染图，也用于继续编辑已生成图片。
+- `grok-imagine-image`：主模型在任务创建阶段明确不可用时的兜底模型；任务已经创建后不会重复提交其他模型，避免重复计费。
 - Tripo H3.1：将员工上传图片或选中的渲染图生成不带纹理的 GLB 几何模型；UnionAM 服务器负责转换为用于打印的 STL。
 - 浏览器只调用 UnionAM 自己的 `/api/gift/ai/*` 接口，第三方 Key 不会下发到前端。
 
@@ -20,7 +21,9 @@ GIFT_3D_DEFAULT_LONGEST_MM=100
 
 GPT_IMAGE_BASE_URL=https://api.cdn-krill-ai.com/v1
 GPT_IMAGE_API_KEY=
-GPT_IMAGE_MODEL=wan2.7-image-pro
+GPT_IMAGE_GENERATION_MODEL=grok-imagine-image-quality
+GPT_IMAGE_EDIT_MODEL=grok-imagine-image-quality
+GPT_IMAGE_FALLBACK_MODEL=grok-imagine-image
 GPT_IMAGE_SIZE=1024x1024
 GPT_IMAGE_QUALITY=high
 ```
@@ -44,6 +47,8 @@ GPT_IMAGE_QUALITY=high
 - `POST /api/gift/ai/3d/submit`：上传单张白底图并提交 Tripo 图片生成模型任务。
 - `GET /api/gift/ai/3d/query?id=...`：查询 Tripo 生成任务，并在成功后触发服务器 GLB → STL 转换。
 - `GET /api/gift/ai/3d/file?id=...&type=stl`：下载服务器生成并缓存的二进制 STL 文件。
+
+生成和编辑图片请求会追加 SLA 光固化打印约束：名义壁厚 1.5mm、任何壁/杆/刀刃/连接点/浮雕细节不得小于 0.5mm、悬空面原则上不超过 45°、内角圆角过渡、单一连通的封闭单壳体、稳定底座、可清洗和可排液路径；禁止浮空件、断开件、非流形、零厚度、尖锐内角、大跨度水平悬空、无排液孔的封闭空腔和仅依靠纹理表达的细节。生成图统一使用纯白背景、无地面和无阴影。上述提示词是打印设计约束，不替代 STL 网格修复、壁厚检测、支撑分析和切片验证。
 
 所有接口都要求有效的联泰员工礼品站会话。
 

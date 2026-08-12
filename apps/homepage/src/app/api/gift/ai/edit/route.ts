@@ -18,12 +18,15 @@ export async function POST(request: Request) {
     const promptValue = formData.get('prompt');
     const prompt = typeof promptValue === 'string' ? promptValue.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Edit prompt must contain 1 to 4000 characters.', 400, 'validation');
+    const monochromeValue = formData.get('monochromeColor');
+    const monochromeColor = typeof monochromeValue === 'string' && monochromeValue.trim() ? monochromeValue.trim().toUpperCase() : undefined;
+    if (monochromeColor && !/^#[0-9A-F]{6}$/.test(monochromeColor)) throw new GiftAiError('Monochrome paint color must be a six-digit HEX value.', 400, 'validation');
     if (isLocalGiftDevelopmentSession(session)) {
       const draftRequestId = Number(formData.get('draftRequestId'));
       const generated = await withGiftAiUsage(
         session,
         'image_edit',
-        () => editGiftImage({ image, mask, prompt }),
+        () => editGiftImage({ image, mask, prompt, monochromeColor, whiteBackground: true }),
         giftAiIdempotencyKey(request),
         { provider: 'krill-ai', model: IMAGE_EDIT_MODEL },
       );
@@ -61,7 +64,7 @@ export async function POST(request: Request) {
         actor: employee, requestId: draft.id, kind: 'edit_mask', file: mask,
         metadata: { source: 'user', stage: `${stage}_mask`, usageRequestId: requestId },
       }) : null;
-      const generated = await editGiftImage({ image, mask, prompt });
+      const generated = await editGiftImage({ image, mask, prompt, monochromeColor, whiteBackground: true });
       await updateGiftAiUsageModel(requestId, generated.model || IMAGE_EDIT_MODEL);
       const output = await persistGiftDraftGeneratedImage({
         actor: employee, requestId: draft.id, image: generated, filename: `${stage}.png`,
