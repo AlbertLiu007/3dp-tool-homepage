@@ -415,7 +415,7 @@ const studioCopy = {
     surfaceEffect: '礼品表面效果',
     surfaceEffectHint: '除透明件外，所有效果均为整件单一纯色喷漆；生成的模型仍保留可打印的白膜结构。',
     surfaceBronze: '铜做旧',
-    surfaceBronzeHint: '整件古铜色单色喷漆，不保留原图配色',
+    surfaceBronzeHint: '深色氧化凹槽、暖铜高光与自然磨损的真实古铜质感',
     surfaceTransparent: '透明件',
     surfaceTransparentHint: '无色透明，呈现玻璃或透明亚克力效果',
     surfaceSilver: '金属银',
@@ -537,7 +537,7 @@ const studioCopy = {
     surfaceEffect: 'Gift surface effect',
     surfaceEffectHint: 'Except for Transparent, every finish uses one solid paint color over the entire gift. The generated model remains a printable white base.',
     surfaceBronze: 'Antique bronze',
-    surfaceBronzeHint: 'One antique-bronze paint color over the entire gift',
+    surfaceBronzeHint: 'Real aged bronze with dark patina, warm copper highlights, and natural wear',
     surfaceTransparent: 'Transparent',
     surfaceTransparentHint: 'Colorless and clear, like glass or transparent acrylic',
     surfaceSilver: 'Bright metallic silver',
@@ -731,9 +731,9 @@ function GiftModelVisual({ model, onPreview }: { model: GiftModel; onPreview?: (
   if (previewSources.length > 0) {
     const movePreview = (direction: number) => setPreviewIndex((current) => (current + direction + previewSources.length) % previewSources.length);
     return (
-      <div className="relative grid h-52 place-items-center overflow-hidden bg-white p-3">
-        <button type="button" onClick={onPreview} disabled={!onPreview} aria-label={`${model.name} 3D 模型预览`} className="group/preview absolute inset-0 grid place-items-center p-3 disabled:cursor-default">
-          {previewSources.map((source, index) => <img key={source} src={source} alt={`${model.name} ${index + 1}`} className={`absolute inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] object-contain drop-shadow-[0_12px_16px_rgba(15,23,42,0.14)] transition duration-500 ${index === previewIndex ? 'scale-100 opacity-100' : 'pointer-events-none scale-[0.97] opacity-0'}`} />)}
+      <div className="relative grid h-52 place-items-center overflow-hidden bg-white">
+        <button type="button" onClick={onPreview} disabled={!onPreview} aria-label={`${model.name} 3D 模型预览`} className="group/preview absolute inset-0 grid place-items-center disabled:cursor-default">
+          {previewSources.map((source, index) => <img key={source} src={source} alt={`${model.name} ${index + 1}`} className={`absolute inset-0 h-full w-full bg-white object-contain transition-opacity duration-500 ${index === previewIndex ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />)}
           {onPreview ? <span className="absolute bottom-3 right-3 grid h-8 w-8 place-items-center rounded-full bg-slate-950/65 text-white opacity-0 shadow-sm backdrop-blur transition group-hover/preview:opacity-100 group-focus-visible/preview:opacity-100"><Maximize2 className="h-4 w-4" /></span> : null}
         </button>
         <span className="absolute left-4 top-4 rounded-md border border-white/80 bg-white/90 px-2.5 py-1 text-[10px] font-black text-[#0b4f9c] shadow-sm">{model.categoryLabel}</span>
@@ -1078,12 +1078,12 @@ function RenderProgressCard({ language, slot, index, liveElapsedMs, finish, sele
   if (slot.status === 'ready' && slot.image) {
     return <div><RenderConcept language={language} finish={finish} index={index} source={giftImageSource(slot.image)} selected={selected} onSelect={onSelect} onPreview={onPreview} labels={labels} /><div className="mt-2 flex items-center gap-1.5 px-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />{labels.renderProgressReady.replace('{seconds}', Math.max(1, Math.round(slot.elapsedMs / 1000)).toString())}</div></div>;
   }
-  const percent = slot.status === 'error' ? 0 : Math.min(94, Math.max(slot.percent, Math.round(liveElapsedMs / 320) - index * 7));
+  const percent = slot.status === 'error' ? 100 : Math.min(94, Math.max(slot.percent, Math.round(liveElapsedMs / 320) - index * 7));
   return <div className={`overflow-hidden rounded-xl border p-3 ${slot.status === 'error' ? 'border-red-200 bg-red-50' : 'border-blue-100 bg-white'}`} role="status" aria-live="polite">
     <div className="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-lg bg-[radial-gradient(circle_at_50%_35%,#f0fbff_0%,#e7f0fb_50%,#dbe5f0_100%)]">
       {slot.status === 'error' ? <X className="h-8 w-8 text-red-400" /> : <><div className="absolute h-24 w-24 animate-pulse rounded-full bg-cyan-200/40 blur-2xl" /><LoaderCircle className="relative h-8 w-8 animate-spin text-[#0b4f9c]" /></>}
       <span className="absolute left-3 top-3 rounded bg-slate-950/60 px-2 py-1 text-[10px] font-black text-white backdrop-blur">0{index + 1}</span>
-      <span className="absolute bottom-3 rounded-full bg-white/90 px-3 py-1.5 font-mono text-xs font-black text-[#0b4f9c] shadow-sm">{percent}%</span>
+      <span className={`absolute bottom-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-black shadow-sm ${slot.status === 'error' ? 'text-red-600' : 'font-mono text-[#0b4f9c]'}`}>{slot.status === 'error' ? (language === 'zh' ? '未完成' : 'Not completed') : `${percent}%`}</span>
     </div>
     <div className="mt-3 flex items-center justify-between gap-3 text-[11px] font-bold"><span className={slot.status === 'error' ? 'text-red-700' : 'text-slate-600'}>{slot.status === 'error' ? slot.error : labels.renderProgressGenerating.replace('{index}', String(index + 1))}</span><span className="shrink-0 font-mono text-slate-400">{Math.round(liveElapsedMs / 1000)}s</span></div>
     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full transition-[width] duration-500 ${slot.status === 'error' ? 'bg-red-400' : 'bg-gradient-to-r from-[#0b4f9c] to-cyan-400'}`} style={{ width: `${percent}%` }} /></div>
@@ -1195,11 +1195,14 @@ function editClientErrorMessage(error: unknown, language: GiftLanguage) {
 }
 
 function surfaceEffectPrompt(language: GiftLanguage, effect: SurfaceEffectId, paintColor: string) {
+  if (effect === 'bronze') {
+    return language === 'zh'
+      ? '真实博物馆级铜做旧雕塑材质：整体以深棕黑色氧化包浆为基底，凹槽、接缝、纹理深处和底座边缘自然积聚更深的黑褐色铜锈；大面保留温暖的红铜与古铜色层次；凸起边缘、转折和经常触碰的位置呈现克制的金铜色抛光高光与自然磨损。表面要有细微不均匀斑驳、岁月感和金属反射，但仍清晰展示结构细节。禁止均匀棕色喷漆、橙色塑料、纯金、镜面铜、卡通材质、整件同一色值或把阴影压平。'
+      : 'A realistic museum-grade antique bronze sculpture finish: use a deep brown-black oxidized patina as the base, with naturally darker brown-black oxidation accumulated in recesses, seams, engraved details, texture valleys, and around the base; retain layered warm red-copper and aged-bronze tones across broad surfaces; add restrained polished golden-copper highlights and natural wear on raised edges, transitions, and touch points. Include subtle irregular mottling, age, and metallic reflections while keeping structural detail crisp. Never use flat uniform brown paint, orange plastic, pure gold, mirror copper, cartoon material, one constant color value, or flattened shading.';
+  }
   const targetColor = effect === 'transparent'
     ? ''
-    : effect === 'bronze'
-      ? '#9A5A27'
-      : effect === 'silver'
+    : effect === 'silver'
         ? '#B9C1CC'
         : effect === 'red'
           ? '#E3262E'
@@ -1211,7 +1214,7 @@ function surfaceEffectPrompt(language: GiftLanguage, effect: SurfaceEffectId, pa
                 ? '#7B8794'
                 : paintColor.toUpperCase();
   const prompts: Record<SurfaceEffectId, { zh: string; en: string }> = {
-    bronze: { zh: '整件使用唯一的古铜色纯色喷漆，保持克制的纪念感，不使用双色旧化、金色点缀或原图颜色', en: 'one uniform antique-bronze spray-paint color across the entire gift, with a restrained commemorative appearance and no two-tone patina, gold accents, or original-image colors' },
+    bronze: { zh: '', en: '' },
     transparent: { zh: '无色透明的玻璃或透明亚克力材质，不带任何红色、金色、棕色、灰色或原图颜色；仅通过真实透光、折射、边缘高光和透明厚度表现材质，主体仍保持完整可打印实体结构', en: 'a completely colorless transparent glass or clear acrylic material with no red, gold, brown, gray, or original-image tint; show the material only through realistic transmission, refraction, edge highlights, and transparent thickness while retaining a complete printable solid form' },
     silver: { zh: '整件使用唯一的亮银色汽车金属漆，平滑清漆层和明亮中性高光，禁止出现第二种颜色、裸金属或双色点缀', en: 'one uniform bright silver automotive metallic paint across the entire gift, with a smooth clearcoat and bright neutral specular highlights; no second color, bare metal, or two-tone accents' },
     red: { zh: '整件使用唯一的亮红色汽车金属漆，平滑清漆层和金属漆面高光，禁止金色点缀、渐变、拼色或其他材质色', en: 'one uniform bright red automotive metallic paint across the entire gift, with a smooth clearcoat and metallic-paint highlights; no gold accents, gradients, color blocking, or secondary materials' },
@@ -1234,7 +1237,11 @@ function renderPrompt(language: GiftLanguage, brief: string, tags: string[], eff
     ? (language === 'zh'
       ? '透明件必须是无色透明玻璃或透明亚克力效果，严禁把原图的红色、金色或其他颜色保留为透明材质的色调；不得使用有色玻璃、彩色树脂或染色透明效果。'
       : 'The transparent piece must be colorless clear glass or transparent acrylic. Never preserve the original red, gold, or any other image colors as a tint; do not use colored glass, colored resin, or dyed transparency.')
-    : (language === 'zh'
+    : effect === 'bronze'
+      ? (language === 'zh'
+        ? '铜做旧必须保留多层金属质感：凹处深、凸处亮、暖铜与黑褐氧化自然过渡，不得执行单色覆盖，也不得把礼品处理成均匀棕色塑料。'
+        : 'Antique bronze must retain layered metal character: dark recesses, brighter raised edges, and natural transitions between warm copper and brown-black oxidation. Do not apply monochrome coverage or turn the gift into uniform brown plastic.')
+      : (language === 'zh'
       ? '这是单色纯色喷漆效果：整件礼品只能使用一个不透明颜色，必须覆盖主体、底座和所有细节；禁止保留原图颜色、双色、拼色、渐变、彩色纹理、不同颜色金属件、透明区域和任何第二种点缀色，只允许当前工艺对应的同色金属漆高光、清漆层高光或中性光照造成明暗变化。'
       : 'This is a single-color spray-paint finish: the entire gift must use exactly one opaque color covering the body, base, and every detail. Do not preserve original colors and do not use two-tone treatment, color blocking, gradients, colored textures, differently colored metal parts, transparent regions, or any second accent color; only the requested same-color metallic-paint highlights, clearcoat highlights, and neutral-light shading may vary brightness.');
   return `${request}\nCustomer profile: ${tags.join(', ') || 'professional business customer'}\nCreate one complete, premium, production-ready desk gift render for SLA resin 3D printing. ${finishText}. ${transparentRule} Apply these SLA engineering constraints: use a nominal 1.5 mm wall thickness for shell-like areas and never create any wall, rod, blade, edge, connector, relief, or isolated detail below 0.5 mm; keep unsupported surfaces at no more than 45 degrees from vertical; use rounded internal corners and manufacturable transitions; connect every figure, ornament, weapon, accessory, ring, cable, gear, leaf, and decorative element to the main body or stable integrated base; use one watertight closed single-shell solid with a clear silhouette and accessible cleaning and drainage paths. Prefer a solid form; never create an inaccessible sealed hollow cavity, and if a hollow cavity is essential, include functional drain and vent holes with a continuous resin drainage path. Never use floating, suspended, disconnected, intersecting, non-manifold, open, zero-thickness, paper-thin, fragile, sharp-edged, unsupported large-span, tiny-text, texture-only, or loose-particle details. Use the requested surface finish; if no finish is specified, use a neutral matte-gray SLA resin appearance. Use a uniform pure white background only; no transparency, checkerboard, backdrop texture, floor plane, cast shadow, contact shadow, model shadow, detached shadow, gray patch, halo, extra object, packaging, hands, text, logo, or watermark. Use even neutral studio lighting. One centered object occupying more than 70% of the image. Three-quarter front view.`;
@@ -1262,7 +1269,11 @@ function imageSurfaceRenderPrompt(language: GiftLanguage, effect: SurfaceEffectI
     ? (language === 'zh'
       ? '透明件必须保持无色，呈现玻璃或透明亚克力的真实透光、折射和边缘高光；严禁红色、金色、棕色、灰色、有色玻璃、彩色树脂或原图颜色污染。'
       : 'The transparent piece must remain colorless, showing realistic glass or clear-acrylic transmission, refraction, and edge highlights; never add red, gold, brown, gray, colored glass, colored resin, or any tint from the original image.')
-    : (language === 'zh'
+    : effect === 'bronze'
+      ? (language === 'zh'
+        ? '只改变为真实铜做旧材质，不做单色喷漆：凹槽和纹理深处为深棕黑氧化包浆，大面为温暖红铜和古铜层次，凸起边缘有克制的金铜高光和自然磨损；禁止均匀棕色、橙色塑料和纯金效果。'
+        : 'Change only the material to realistic antique bronze, not monochrome paint: use deep brown-black oxidized patina in recesses and texture valleys, layered warm red-copper and aged bronze on broad surfaces, and restrained golden-copper highlights with natural wear on raised edges. No uniform brown, orange plastic, or pure-gold finish.')
+      : (language === 'zh'
       ? '强制整件单色：把输入图中的所有原始颜色和材质全部替换为所选唯一颜色，包括红色、金色、肤色、毛发、金属件、武器、服饰、装饰和底座；任何位置都不得出现第二种颜色。'
       : 'Enforce one color over the entire gift: replace every original color and material in the input, including red, gold, skin, hair, metal parts, weapons, clothing, decorations, and the base, with the selected single color. No second color may appear anywhere.');
   return `${surfaceEffectPrompt(language, effect, paintColor)}. ${finishRule} Re-render the exact same complete subject from the input image on a uniform pure white background for product preview and 3D model generation. Preserve the complete geometry, pose, silhouette, proportions, camera angle, framing, every connected component, thin edge, limb, accessory, and the entire supporting base. Change only the requested surface finish. Do not crop, simplify, redesign, remove parts, add parts, create holes, or alter the structure. Output an opaque image on a plain solid white background; do not output transparency, a checkerboard pattern, gray or black patches, floor, cast shadow, contact shadow, model shadow, halo, unrelated objects, text, logo, or watermark. Use crisp natural edges and neutral studio lighting.`;
@@ -1664,7 +1675,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
         finishType: backendFinish.finishType,
         paintColor: backendFinish.paintColor,
-        monochromeColor: effect === 'transparent' ? null : effectColor,
+        monochromeColor: effect === 'transparent' || effect === 'bronze' ? null : effectColor,
       });
       if (imagePaintIdRef.current !== paintId) return;
       setImageDraftRequestId(edited.draftRequestId);
@@ -1925,7 +1936,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           businessScene: selectedProfileTags.slice(0, 4).join(' · '),
           finishType: backendFinish.finishType,
           paintColor: backendFinish.paintColor,
-          monochromeColor: surfaceEffect === 'transparent' ? null : (surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor),
+          monochromeColor: surfaceEffect === 'transparent' || surfaceEffect === 'bronze' ? null : (surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor),
           brief,
           specifications: { source: 'ai_brief', profileTags: selectedProfileTags, surfaceEffect },
         }),
@@ -1946,7 +1957,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       let buffer = '';
       const handleLine = (line: string) => {
         if (!line.trim()) return;
-        const message = JSON.parse(line) as { type?: string; index?: number; image?: GiftImageResult; draft?: { id?: number }; error?: string; message?: string };
+        const message = JSON.parse(line) as { type?: string; index?: number; image?: GiftImageResult; draft?: { id?: number }; error?: string; message?: string; elapsedMs?: number };
         if (message.type === 'image' && Number.isInteger(message.index) && message.image) {
           const index = Number(message.index);
           readyCount += 1;
@@ -1957,7 +1968,10 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
         }
         if (message.type === 'slot-error' && Number.isInteger(message.index)) {
           const index = Number(message.index);
-          setRenderSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { ...slot, status: 'error', error: message.message || (language === 'zh' ? '生成失败，请重试' : 'Generation failed. Retry.') } : slot));
+          const errorText = language === 'zh'
+            ? message.error === 'quality' ? '图片质量未达标，系统自动重试后仍未完成' : message.error === 'timeout' ? '生成超时，系统自动重试后仍未完成' : '图片服务未完成该方案，系统已自动重试'
+            : message.error === 'quality' ? 'Image quality was insufficient after automatic retry.' : message.error === 'timeout' ? 'Generation timed out after automatic retry.' : 'The image provider did not complete this concept after automatic retry.';
+          setRenderSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { ...slot, status: 'error', elapsedMs: message.elapsedMs || Date.now() - startedAt, percent: 100, error: errorText } : slot));
         }
         if (message.type === 'error') throw { configuration: false, reason: message.error, message: message.message };
       };
@@ -1999,7 +2013,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
       formData.set('brief', brief);
       if (backendFinish.paintColor) formData.set('paintColor', backendFinish.paintColor);
-      if (surfaceEffect !== 'transparent') formData.set('monochromeColor', surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor);
+      if (surfaceEffect !== 'transparent' && surfaceEffect !== 'bronze') formData.set('monochromeColor', surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor);
       if (briefDraftRequestId) formData.set('draftRequestId', String(briefDraftRequestId));
       const selectedAssetId = selectedImage?.assetId;
       if (selectedAssetId) formData.set('sourceAssetId', String(selectedAssetId));

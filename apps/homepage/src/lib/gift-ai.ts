@@ -1,5 +1,7 @@
 import { ensureServerStl } from '@/lib/model/server-glb-to-stl';
 import { create3dPrintInputPng, createMonochromePaintPng, createTransparentPng, createWhiteMattePng } from '@/lib/image-transparency';
+import { finishGiftAiProviderAttempt, startGiftAiProviderAttempt } from '@/lib/gift-db';
+import sharp from 'sharp';
 
 type ImageApiItem = {
   b64_json?: string;
@@ -57,6 +59,19 @@ export type GeneratedGiftImage = {
   whiteBackgroundProcessor?: string;
   transparentBackground?: boolean;
   transparentBackgroundProcessor?: string;
+  providerJobId?: string;
+  quality?: {
+    foregroundRatio: number;
+    contrast: number;
+    borderWhiteRatio: number;
+    edgeForegroundRatio: number;
+  };
+};
+
+export type GiftImageInvocationContext = {
+  requestId?: string;
+  stage?: string;
+  slot?: number;
 };
 
 export type WhiteModelJob = {
@@ -120,17 +135,79 @@ export const IMAGE_EDIT_MODEL = 'grok-imagine-image-quality';
 export const IMAGE_FALLBACK_MODEL = 'grok-imagine-image';
 export const IMAGE_DOMESTIC_BASE_URL = 'https://api.cdn-krill-ai.com/v1';
 export const IMAGE_FALLBACK_BASE_URL = IMAGE_DOMESTIC_BASE_URL;
+const ALLOWED_IMAGE_MODELS = new Set([IMAGE_GENERATION_MODEL, IMAGE_EDIT_MODEL, IMAGE_FALLBACK_MODEL]);
+const IMAGE_CIRCUIT_FAILURE_THRESHOLD = 3;
+const IMAGE_CIRCUIT_OPEN_MS = 5 * 60_000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var unionamGiftImageCircuits: Map<string, { failures: number; openUntil: number }> | undefined;
+}
+
+function imageCircuits() {
+  if (!globalThis.unionamGiftImageCircuits) globalThis.unionamGiftImageCircuits = new Map();
+  return globalThis.unionamGiftImageCircuits;
+}
+
+function circuitKey(operation: ImageOperation, model: string, baseUrl: string) {
+  return `${operation}:${model}:${baseUrl}`;
+}
+
+function circuitOpen(key: string) {
+  const circuit = imageCircuits().get(key);
+  if (!circuit) return false;
+  if (circuit.openUntil <= Date.now()) {
+    imageCircuits().delete(key);
+    return false;
+  }
+  return true;
+}
+
+function recordCircuitSuccess(key: string) {
+  imageCircuits().delete(key);
+}
+
+function recordCircuitFailure(key: string) {
+  const current = imageCircuits().get(key) || { failures: 0, openUntil: 0 };
+  const failures = current.failures + 1;
+  imageCircuits().set(key, {
+    failures,
+    openUntil: failures >= IMAGE_CIRCUIT_FAILURE_THRESHOLD ? Date.now() + IMAGE_CIRCUIT_OPEN_MS : 0,
+  });
+}
 
 class ImageProviderUnavailableError extends GiftAiError {
-  constructor(message: string, status = 502) {
+  constructor(message: string, status = 502, readonly safeToFallback = false) {
     super(message, status, 'upstream');
     this.name = 'ImageProviderUnavailableError';
   }
 }
 
+class ImageProviderRejectedError extends GiftAiError {
+  constructor(message: string, status = 502) {
+    super(message, status, 'upstream');
+    this.name = 'ImageProviderRejectedError';
+  }
+}
+
+class ImageTaskFailedError extends GiftAiError {
+  constructor(message: string) {
+    super(message, 502, 'upstream');
+    this.name = 'ImageTaskFailedError';
+  }
+}
+
+class ImageQualityRejectedError extends GiftAiError {
+  constructor(message = 'Generated image did not pass the product-image quality check.') {
+    super(message, 502, 'upstream');
+    this.name = 'ImageQualityRejectedError';
+  }
+}
+
 function canUseImageFallback(error: unknown) {
-  return error instanceof ImageProviderUnavailableError
-    || (error instanceof GiftAiError && error.reason === 'authentication');
+  if (error instanceof ImageProviderUnavailableError) return error.safeToFallback;
+  if (error instanceof ImageProviderRejectedError) return error.status < 500 && ![401, 403, 408, 425, 429].includes(error.status);
+  return false;
 }
 
 function retryDelay(response: Response | undefined, attempt: number) {
@@ -161,25 +238,16 @@ async function fetchImageProvider(input: string, initFactory: () => RequestInit,
 type ImageOperation = 'generation' | 'edit';
 
 function imageConfiguration() {
-  const explicitLocalBaseUrl = process.env.GPT_IMAGE_BASE_URL?.trim();
+  const explicitBaseUrl = process.env.GPT_IMAGE_BASE_URL?.trim();
   const domesticBaseUrl = process.env.GPT_IMAGE_DOMESTIC_BASE_URL?.trim();
-  const isProduction = process.env.NODE_ENV === 'production';
   const baseUrl = normalizedBaseUrl(
-    !isProduction && explicitLocalBaseUrl
-      ? explicitLocalBaseUrl
-      : domesticBaseUrl || IMAGE_DOMESTIC_BASE_URL,
+    explicitBaseUrl || domesticBaseUrl || IMAGE_DOMESTIC_BASE_URL,
   );
 
   return {
-    // Keep the production default on the domestic CDN route. For local
-    // development, an explicit GPT_IMAGE_BASE_URL is allowed to select the
-    // reachable route configured by the developer; this avoids waiting for a
-    // blocked route before the configured local provider is tried.
     baseUrl,
     fallbackBaseUrl: normalizedBaseUrl(
-      !isProduction
-        ? process.env.GPT_IMAGE_FALLBACK_BASE_URL?.trim() || IMAGE_FALLBACK_BASE_URL
-        : baseUrl,
+      process.env.GPT_IMAGE_FALLBACK_BASE_URL?.trim() || baseUrl || IMAGE_FALLBACK_BASE_URL,
     ),
     apiKey: requiredEnvironmentVariable('GPT_IMAGE_API_KEY'),
     size: process.env.GPT_IMAGE_SIZE?.trim() || '1024x1024',
@@ -190,22 +258,44 @@ function imageConfiguration() {
 function imageProviderAttempts(operation: ImageOperation, configuration: ReturnType<typeof imageConfiguration>) {
   const models = imageModels(operation);
   return [
-    { model: models.primary, baseUrl: configuration.baseUrl },
-    { model: models.fallback, baseUrl: configuration.fallbackBaseUrl },
+    { model: models.primary, baseUrl: configuration.baseUrl, role: 'primary' as const },
+    { model: models.fallback, baseUrl: configuration.fallbackBaseUrl, role: 'fallback' as const },
   ].filter((attempt, index, attempts) => attempts.findIndex(
     (candidate) => candidate.model === attempt.model && candidate.baseUrl === attempt.baseUrl,
   ) === index);
 }
 
 function imageModels(operation: ImageOperation) {
-  return {
-    // Product routing is fixed here. Legacy deployment variables must not
-    // silently route production traffic away from the configured Grok models.
-    primary: operation === 'generation' ? IMAGE_GENERATION_MODEL : IMAGE_EDIT_MODEL,
-    // Keep the fallback deliberately fixed. An old environment override must not
-    // reintroduce GPT or the retired Wan models.
-    fallback: IMAGE_FALLBACK_MODEL,
+  if (process.env.GPT_IMAGE_MODEL?.trim()) {
+    throw new GiftAiError('GPT_IMAGE_MODEL is retired. Configure explicit generation, edit, and fallback models.', 503, 'configuration');
+  }
+  const models = {
+    primary: operation === 'generation'
+      ? process.env.GPT_IMAGE_GENERATION_MODEL?.trim() || IMAGE_GENERATION_MODEL
+      : process.env.GPT_IMAGE_EDIT_MODEL?.trim() || IMAGE_EDIT_MODEL,
+    fallback: process.env.GPT_IMAGE_FALLBACK_MODEL?.trim() || IMAGE_FALLBACK_MODEL,
   };
+  for (const model of [models.primary, models.fallback]) {
+    if (!ALLOWED_IMAGE_MODELS.has(model)) {
+      throw new GiftAiError(`Unsupported production image model: ${model}.`, 503, 'configuration');
+    }
+  }
+  if (models.primary === models.fallback) {
+    throw new GiftAiError('The image fallback model must differ from the primary model.', 503, 'configuration');
+  }
+  return models;
+}
+
+export function configuredImageGenerationModel() {
+  return imageModels('generation').primary;
+}
+
+export function configuredImageEditModel() {
+  return imageModels('edit').primary;
+}
+
+export function configuredImageFallbackModel() {
+  return imageModels('generation').fallback;
 }
 
 function usesAsyncImageResult(model: string) {
@@ -269,8 +359,12 @@ async function readImageResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorPayload = payload as (ImageApiResponse & { message?: string }) | undefined;
     const message = errorPayload?.error?.message || errorPayload?.message || `Image provider request failed with HTTP ${response.status}.`;
-    if (TRANSIENT_UPSTREAM_STATUSES.has(response.status)) throw new ImageProviderUnavailableError(message, response.status);
-    throw new GiftAiError(message, response.status, response.status === 401 || response.status === 403 ? 'authentication' : 'upstream');
+    // Only a response that clearly rejects before task acceptance is safe to
+    // reroute. A 5xx/timeout response to a billable POST is ambiguous: the
+    // provider may have accepted the job before the relay failed.
+    if (TRANSIENT_UPSTREAM_STATUSES.has(response.status)) throw new ImageProviderUnavailableError(message, response.status, false);
+    if (response.status === 401 || response.status === 403) throw new GiftAiError(message, response.status, 'authentication');
+    throw new ImageProviderRejectedError(message, response.status);
   }
   if (!payload) throw new GiftAiError('Image provider returned an invalid JSON response.');
   return payload;
@@ -283,36 +377,98 @@ async function readTripoResponse<T>(response: Response): Promise<T> {
   return payload.data;
 }
 
-async function normalizedImageBuffer(buffer: Buffer, model: string, options: { monochromeColor?: string; whiteBackground?: boolean } = {}): Promise<GeneratedGiftImage> {
+type ImageNormalizationOptions = {
+  monochromeColor?: string;
+  whiteBackground?: boolean;
+};
+
+export async function inspectGiftImageQuality(png: Buffer) {
+  const sampled = await sharp(png)
+    .toColourspace('srgb')
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .resize(128, 128, { fit: 'fill' })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  const pixels = sampled.length / 3;
+  let foreground = 0;
+  let luminanceSum = 0;
+  let luminanceSquaredSum = 0;
+  let borderPixels = 0;
+  let borderWhitePixels = 0;
+  let edgeForegroundPixels = 0;
+  const width = 128;
+  const height = 128;
+  const borderDepth = 5;
+  for (let offset = 0; offset < sampled.length; offset += 3) {
+    const red = sampled[offset];
+    const green = sampled[offset + 1];
+    const blue = sampled[offset + 2];
+    const distanceFromWhite = Math.sqrt(((255 - red) ** 2) + ((255 - green) ** 2) + ((255 - blue) ** 2));
+    if (distanceFromWhite >= 28) foreground += 1;
+    const pixel = offset / 3;
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    const border = x < borderDepth || y < borderDepth || x >= width - borderDepth || y >= height - borderDepth;
+    if (border) {
+      borderPixels += 1;
+      if (distanceFromWhite < 20) borderWhitePixels += 1;
+      if (distanceFromWhite >= 38) edgeForegroundPixels += 1;
+    }
+    const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    luminanceSum += luminance;
+    luminanceSquaredSum += luminance * luminance;
+  }
+  const mean = luminanceSum / pixels;
+  const contrast = Math.sqrt(Math.max(0, luminanceSquaredSum / pixels - mean * mean));
+  const foregroundRatio = foreground / pixels;
+  const borderWhiteRatio = borderWhitePixels / borderPixels;
+  const edgeForegroundRatio = edgeForegroundPixels / borderPixels;
+  // This is deliberately conservative: it only rejects blank/nearly erased
+  // results. Transparent and pale products may have low contrast, but must
+  // still retain enough visible geometry to be selectable by a customer.
+  if (foregroundRatio < 0.008 || (foregroundRatio < 0.025 && contrast < 9)) {
+    throw new ImageQualityRejectedError();
+  }
+  if (foregroundRatio > 0.82) throw new ImageQualityRejectedError('Generated image subject is cropped or the background is not isolated.');
+  if (borderWhiteRatio < 0.93) throw new ImageQualityRejectedError('Generated image background is not uniformly pure white.');
+  if (edgeForegroundRatio > 0.045) throw new ImageQualityRejectedError('Generated image subject touches or crosses the image boundary.');
+  return {
+    foregroundRatio: Number(foregroundRatio.toFixed(4)),
+    contrast: Number(contrast.toFixed(2)),
+    borderWhiteRatio: Number(borderWhiteRatio.toFixed(4)),
+    edgeForegroundRatio: Number(edgeForegroundRatio.toFixed(4)),
+  };
+}
+
+async function normalizedImageBuffer(buffer: Buffer, model: string, options: ImageNormalizationOptions = {}): Promise<GeneratedGiftImage> {
   try {
-    // Every new generation/edit result is normalized to an opaque pure-white
-    // background. First remove the edge-connected backdrop locally, then
-    // flatten to white. This avoids preserving gray studios, floors, and
-    // cast shadows returned by an upstream image model.
+    // Provider-generated images already receive a strict white-background
+    // prompt. Preserve those pixels and only flatten alpha here: re-segmenting
+    // a pale, silver, glass, or highlight-heavy subject can erase valid parts.
     const whiteBackground = options.whiteBackground ?? true;
     let png: Buffer;
     let whiteBackgroundProcessor: string | undefined;
     if (whiteBackground) {
-      try {
-        const subject = options.monochromeColor
-          ? await createMonochromePaintPng(buffer, options.monochromeColor, MAX_IMAGE_BYTES)
-          : await createTransparentPng(buffer, MAX_IMAGE_BYTES, { preserveExistingAlpha: true });
-        png = await createWhiteMattePng(subject, MAX_IMAGE_BYTES);
-        whiteBackgroundProcessor = 'sharp-adaptive-cutout-white-v1';
-      } catch {
-        // The upstream request has already completed and may be billable. If
-        // conservative local segmentation cannot isolate the subject, retain
-        // the provider result and at least normalize alpha to opaque white.
-        // The prompt already requires a pure-white studio background, so a
-        // local segmentation miss must not discard a successfully generated
-        // image or trigger another paid model call.
-        png = await createWhiteMattePng(buffer, MAX_IMAGE_BYTES);
-        whiteBackgroundProcessor = 'sharp-white-flatten-fallback-v1';
-      }
+      png = await createWhiteMattePng(buffer, MAX_IMAGE_BYTES);
+      whiteBackgroundProcessor = 'sharp-white-flatten-preserve-v2';
     } else {
       png = options.monochromeColor
         ? await createMonochromePaintPng(buffer, options.monochromeColor, MAX_IMAGE_BYTES)
         : await createTransparentPng(buffer, MAX_IMAGE_BYTES, { preserveExistingAlpha: true });
+    }
+    let quality;
+    if (whiteBackground) {
+      try {
+        quality = await inspectGiftImageQuality(png);
+      } catch (error) {
+        if (!(error instanceof ImageQualityRejectedError)) throw error;
+        const isolated = await createTransparentPng(buffer, MAX_IMAGE_BYTES, { preserveExistingAlpha: true });
+        const corrected = await createWhiteMattePng(isolated, MAX_IMAGE_BYTES);
+        quality = await inspectGiftImageQuality(corrected);
+        png = corrected;
+        whiteBackgroundProcessor = 'sharp-adaptive-cutout-white-v2';
+      }
     }
     return {
       dataUrl: `data:image/png;base64,${png.toString('base64')}`,
@@ -325,8 +481,10 @@ async function normalizedImageBuffer(buffer: Buffer, model: string, options: { m
         : options.monochromeColor
           ? 'sharp-alpha-preserving-monochrome-paint-v1'
           : 'sharp-alpha-preserving-adaptive-border-v5',
+      quality,
     };
   } catch (error) {
+    if (error instanceof ImageQualityRejectedError) throw error;
     throw new GiftAiError(error instanceof Error ? error.message : 'Image provider returned an unreadable image.');
   }
 }
@@ -339,7 +497,7 @@ function providerImageUrl(baseUrl: string, value: string) {
   }
 }
 
-async function normalizeImage(payload: ImageApiResponse, baseUrl: string, apiKey: string, model: string, options: { monochromeColor?: string; whiteBackground?: boolean } = {}): Promise<GeneratedGiftImage> {
+async function normalizeImage(payload: ImageApiResponse, baseUrl: string, apiKey: string, model: string, options: ImageNormalizationOptions = {}): Promise<GeneratedGiftImage> {
   const image = payload.data?.[0];
   if (image?.b64_json) return normalizedImageBuffer(Buffer.from(image.b64_json, 'base64'), model, options);
   if (image?.url) {
@@ -419,7 +577,7 @@ async function downloadImageTaskContent(
   taskId: string,
   apiKey: string,
   model: string,
-  options: { monochromeColor?: string; whiteBackground?: boolean },
+  options: ImageNormalizationOptions,
 ) {
   const response = await fetchImageProvider(`${baseUrl}/images/${encodeURIComponent(taskId)}/content`, () => ({
     method: 'GET',
@@ -446,7 +604,7 @@ async function resolveImageTask(
   taskId: string,
   configuration: ReturnType<typeof imageConfiguration>,
   model: string,
-  options: { monochromeColor?: string; whiteBackground?: boolean },
+  options: ImageNormalizationOptions,
 ) {
   let consecutiveQueryFailures = 0;
   for (let attempt = 0; attempt < IMAGE_TASK_MAX_POLLS; attempt += 1) {
@@ -472,8 +630,10 @@ async function resolveImageTask(
     const status = imageTaskStatus(task);
     if (COMPLETED_IMAGE_TASK_STATUSES.has(status)) {
       try {
-        return await downloadImageTaskContent(baseUrl, taskId, configuration.apiKey, model, options);
+        const image = await downloadImageTaskContent(baseUrl, taskId, configuration.apiKey, model, options);
+        return { ...image, providerJobId: taskId };
       } catch (error) {
+        if (error instanceof ImageQualityRejectedError) throw error;
         throw new GiftAiError(
           error instanceof Error ? error.message : 'Image edit task result could not be downloaded.',
           error instanceof GiftAiError ? error.status : 502,
@@ -482,9 +642,7 @@ async function resolveImageTask(
       }
     }
     if (FAILED_IMAGE_TASK_STATUSES.has(status)) {
-      // The provider has already accepted this task. Do not submit a second
-      // billable task just because the accepted task later reports failure.
-      throw new GiftAiError(imageTaskError(task), 502, 'upstream');
+      throw new ImageTaskFailedError(imageTaskError(task));
     }
     if (attempt < IMAGE_TASK_MAX_POLLS - 1) {
       await new Promise((resolve) => setTimeout(resolve, IMAGE_TASK_POLL_INTERVAL_MS));
@@ -498,6 +656,8 @@ async function requestEditedImage(
   model: string,
   configuration: ReturnType<typeof imageConfiguration>,
   input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
+  context: GiftImageInvocationContext,
+  role: 'primary' | 'fallback',
 ) {
   const formData = new FormData();
   formData.set('model', model);
@@ -514,7 +674,19 @@ async function requestEditedImage(
   formData.append(useAsyncResult ? 'image[]' : 'image', input.image, input.image.name || 'gift-render.png');
   if (input.mask) formData.set('mask', input.mask, input.mask.name || 'mask.png');
 
+  const attempt = await startGiftAiProviderAttempt({
+    requestId: context.requestId,
+    operation: 'edit',
+    stage: context.stage || 'image_edit',
+    slot: context.slot,
+    role,
+    provider: 'krill-ai',
+    model,
+    baseHost: new URL(baseUrl).host,
+  });
   let response: Response;
+  let acceptedBillable = false;
+  let providerJobId: string | undefined;
   try {
     response = await fetch(`${baseUrl}/images/edits`, {
       method: 'POST',
@@ -527,6 +699,7 @@ async function requestEditedImage(
       signal: AbortSignal.timeout(IMAGE_EDIT_REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
+    await finishGiftAiProviderAttempt(attempt, { status: 'failed', acceptedBillable, error });
     // A timed-out POST may already have created a billable task. Do not submit
     // another model request when task acceptance is ambiguous.
     throw new GiftAiError(
@@ -535,21 +708,46 @@ async function requestEditedImage(
       'upstream',
     );
   }
-  if (useAsyncResult) {
-    const payload = await readImageResponse<ImageTaskResponse>(response);
-    const taskId = imageTaskId(payload);
-    if (!taskId) throw new GiftAiError('Image edit task did not return an image ID.');
-    return resolveImageTask(baseUrl, taskId, configuration, model, input);
+  try {
+    if (useAsyncResult) {
+      const payload = await readImageResponse<ImageTaskResponse>(response);
+      const taskId = imageTaskId(payload);
+      if (!taskId) throw new GiftAiError('Image edit task did not return an image ID.');
+      providerJobId = taskId;
+      acceptedBillable = true;
+      await finishGiftAiProviderAttempt(attempt, { status: 'accepted', httpStatus: response.status, providerJobId, acceptedBillable: true });
+      const image = await resolveImageTask(baseUrl, taskId, configuration, model, input);
+      await finishGiftAiProviderAttempt(attempt, { status: 'succeeded', httpStatus: response.status, providerJobId, acceptedBillable: true });
+      return image;
+    }
+    const payload = await readImageResponse<ImageApiResponse>(response);
+    acceptedBillable = response.ok;
+    const image = await normalizeImage(payload, baseUrl, configuration.apiKey, model, { ...input, whiteBackground: true });
+    await finishGiftAiProviderAttempt(attempt, { status: 'succeeded', httpStatus: response.status, acceptedBillable });
+    return image;
+  } catch (error) {
+    await finishGiftAiProviderAttempt(attempt, {
+      status: 'failed', httpStatus: response.status, providerJobId, acceptedBillable, error,
+    });
+    throw error;
   }
-  const payload = await readImageResponse<ImageApiResponse>(response);
-  return normalizeImage(payload, baseUrl, configuration.apiKey, model, { ...input, whiteBackground: true });
 }
 
-async function requestGeneratedImage(prompt: string, monochromeColor?: string) {
+async function requestGeneratedImage(prompt: string, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
   const configuration = imageConfiguration();
   let lastError: unknown;
   let primaryError: unknown;
-  for (const [index, { model, baseUrl }] of imageProviderAttempts('generation', configuration).entries()) {
+  for (const [index, { model, baseUrl, role }] of imageProviderAttempts('generation', configuration).entries()) {
+    const key = circuitKey('generation', model, baseUrl);
+    if (circuitOpen(key)) {
+      const skipped = await startGiftAiProviderAttempt({ requestId: context.requestId, operation: 'generation', stage: context.stage || 'render', slot: context.slot, role, provider: 'krill-ai', model, baseHost: new URL(baseUrl).host });
+      await finishGiftAiProviderAttempt(skipped, { status: 'skipped', error: 'Provider circuit is temporarily open.' });
+      continue;
+    }
+    const attempt = await startGiftAiProviderAttempt({ requestId: context.requestId, operation: 'generation', stage: context.stage || 'render', slot: context.slot, role, provider: 'krill-ai', model, baseHost: new URL(baseUrl).host });
+    let acceptedBillable = false;
+    let providerJobId: string | undefined;
+    let httpStatus: number | undefined;
     try {
       // Generation is a billable POST. Do not retry an ambiguous POST;
       // move to the fallback only when the provider explicitly rejects it.
@@ -571,14 +769,27 @@ async function requestGeneratedImage(prompt: string, monochromeColor?: string) {
           ...(usesAsyncImageResult(model) ? { async: true } : {}),
         }),
       }), 1);
+      httpStatus = response.status;
       if (usesAsyncImageResult(model)) {
         const payload = await readImageResponse<ImageTaskResponse>(response);
         const taskId = imageTaskId(payload);
         if (!taskId) throw new GiftAiError('Image generation task did not return an image ID.');
-        return await resolveImageTask(baseUrl, taskId, configuration, model, { monochromeColor, whiteBackground: true });
+        providerJobId = taskId;
+        acceptedBillable = true;
+        await finishGiftAiProviderAttempt(attempt, { status: 'accepted', httpStatus, providerJobId, acceptedBillable: true });
+        const image = await resolveImageTask(baseUrl, taskId, configuration, model, { monochromeColor, whiteBackground: true });
+        await finishGiftAiProviderAttempt(attempt, { status: 'succeeded', httpStatus, providerJobId, acceptedBillable: true });
+        recordCircuitSuccess(key);
+        return image;
       }
-      return await normalizeImage(await readImageResponse<ImageApiResponse>(response), baseUrl, configuration.apiKey, model, { monochromeColor, whiteBackground: true });
+      const image = await normalizeImage(await readImageResponse<ImageApiResponse>(response), baseUrl, configuration.apiKey, model, { monochromeColor, whiteBackground: true });
+      acceptedBillable = response.ok;
+      await finishGiftAiProviderAttempt(attempt, { status: 'succeeded', httpStatus, acceptedBillable });
+      recordCircuitSuccess(key);
+      return image;
     } catch (error) {
+      await finishGiftAiProviderAttempt(attempt, { status: 'failed', httpStatus: httpStatus || (error instanceof GiftAiError ? error.status : undefined), providerJobId, acceptedBillable, error });
+      if (error instanceof ImageProviderUnavailableError || error instanceof ImageProviderRejectedError) recordCircuitFailure(key);
       if (index === 0) primaryError = error;
       lastError = error;
       if (!canUseImageFallback(error)) throw error;
@@ -588,19 +799,36 @@ async function requestGeneratedImage(prompt: string, monochromeColor?: string) {
   throw lastError instanceof Error ? lastError : new GiftAiError('Image generation failed.');
 }
 
-export async function generateGiftImages(prompt: string, count = 3, monochromeColor?: string) {
+export async function generateGiftImages(prompt: string, count = 3, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
   const safeCount = Math.min(Math.max(Math.floor(count), 1), 3);
-  return Promise.all(Array.from({ length: safeCount }, () => requestGeneratedImage(prompt, monochromeColor)));
+  return Promise.all(Array.from({ length: safeCount }, (_, index) => requestGeneratedImage(prompt, monochromeColor, { ...context, slot: context.slot ?? index })));
 }
 
-export async function editGiftImage(input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean }) {
+export function publicGiftImageError(error: unknown) {
+  if (error instanceof ImageQualityRejectedError) return { code: 'quality', message: 'Generated image did not pass quality inspection.' };
+  if (error instanceof ImageTaskFailedError) return { code: 'provider_failed', message: 'Image generation was not completed by the provider.' };
+  if (error instanceof GiftAiError && error.status === 504) return { code: 'timeout', message: 'Image generation timed out.' };
+  if (error instanceof GiftAiError && error.reason === 'configuration') return { code: 'configuration', message: error.message };
+  return { code: 'upstream', message: 'Image generation is temporarily unavailable.' };
+}
+
+export async function editGiftImage(input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
   const configuration = imageConfiguration();
   let lastError: unknown;
   let primaryError: unknown;
-  for (const [index, { model, baseUrl }] of imageProviderAttempts('edit', configuration).entries()) {
+  for (const [index, { model, baseUrl, role }] of imageProviderAttempts('edit', configuration).entries()) {
+    const key = circuitKey('edit', model, baseUrl);
+    if (circuitOpen(key)) {
+      const skipped = await startGiftAiProviderAttempt({ requestId: context.requestId, operation: 'edit', stage: context.stage || 'image_edit', slot: context.slot, role, provider: 'krill-ai', model, baseHost: new URL(baseUrl).host });
+      await finishGiftAiProviderAttempt(skipped, { status: 'skipped', error: 'Provider circuit is temporarily open.' });
+      continue;
+    }
     try {
-      return await requestEditedImage(baseUrl, model, configuration, input);
+      const image = await requestEditedImage(baseUrl, model, configuration, input, context, role);
+      recordCircuitSuccess(key);
+      return image;
     } catch (error) {
+      if (error instanceof ImageProviderUnavailableError || error instanceof ImageProviderRejectedError) recordCircuitFailure(key);
       if (index === 0) primaryError = error;
       lastError = error;
       if (!canUseImageFallback(error)) throw error;

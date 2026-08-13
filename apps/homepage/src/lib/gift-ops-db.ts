@@ -49,7 +49,7 @@ export async function getGiftOpsDashboard() {
         COALESCE(SUM(usage_type = 'image_edit' AND usage_status != 'refunded'), 0) AS edits,
         COALESCE(SUM(usage_type = 'image_to_3d' AND usage_status != 'refunded'), 0) AS models3d,
         COALESCE(SUM(usage_status IN ('reserved', 'running')), 0) AS running,
-        COALESCE(SUM(usage_status = 'refunded'), 0) AS failed
+        COALESCE(SUM(usage_status IN ('partial', 'refunded')), 0) AS failed
       FROM gift_ai_usage_events WHERE usage_date = CURRENT_DATE
     `),
     pool.query<RowDataPacket[]>(`
@@ -131,21 +131,39 @@ function normalizeUsageRow(row: RowDataPacket) {
     durationMs: row.duration_ms === null || row.duration_ms === undefined ? null : Number(row.duration_ms),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+    attempts: [] as {
+      id: number;
+      operation: string;
+      stage: string;
+      slot: number | null;
+      role: string;
+      provider: string;
+      model: string;
+      baseHost: string | null;
+      status: string;
+      httpStatus: number | null;
+      providerJobId: string | null;
+      acceptedBillable: boolean;
+      cacheHit: boolean;
+      durationMs: number | null;
+      error: string | null;
+      createdAt: string | null;
+    }[],
   };
 }
 
 export async function listGiftOpsAiUsage(filters: { status?: string; type?: string; search?: string }) {
   const where: string[] = [];
   const parameters: (string | number | null)[] = [];
-  if (filters.status && ['reserved', 'running', 'succeeded', 'refunded'].includes(filters.status)) {
+  if (filters.status && ['reserved', 'running', 'succeeded', 'partial', 'refunded'].includes(filters.status)) {
     where.push('u.usage_status = ?'); parameters.push(filters.status);
   }
   if (filters.type && ['render', 'image_edit', 'image_to_3d'].includes(filters.type)) {
     where.push('u.usage_type = ?'); parameters.push(filters.type);
   }
   if (filters.search) {
-    where.push('(e.display_name LIKE ? OR e.wecom_user_id LIKE ? OR u.provider_job_id LIKE ?)');
-    const pattern = `%${filters.search.slice(0, 100)}%`; parameters.push(pattern, pattern, pattern);
+    where.push('(e.display_name LIKE ? OR e.wecom_user_id LIKE ? OR u.provider_job_id LIKE ? OR u.model_name LIKE ?)');
+    const pattern = `%${filters.search.slice(0, 100)}%`; parameters.push(pattern, pattern, pattern, pattern);
   }
   const [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT u.*, e.display_name AS employee_name
@@ -154,7 +172,31 @@ export async function listGiftOpsAiUsage(filters: { status?: string; type?: stri
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY u.created_at DESC LIMIT 500
   `, parameters);
-  return rows.map(normalizeUsageRow);
+  const usage = rows.map(normalizeUsageRow);
+  const requestIds = usage.map((item) => item.requestId).filter((value): value is string => Boolean(value));
+  if (!requestIds.length) return usage;
+  const [attemptRows] = await databasePool().query<RowDataPacket[]>(`
+    SELECT * FROM gift_ai_provider_attempts
+    WHERE usage_request_uid IN (${requestIds.map(() => '?').join(',')})
+    ORDER BY created_at ASC, id ASC
+  `, requestIds);
+  const attemptsByRequest = new Map<string, typeof usage[number]['attempts']>();
+  for (const row of attemptRows) {
+    const requestId = String(row.usage_request_uid);
+    const attempts = attemptsByRequest.get(requestId) || [];
+    attempts.push({
+      id: Number(row.id), operation: String(row.operation_type), stage: String(row.processing_stage),
+      slot: row.slot_index === null ? null : Number(row.slot_index), role: String(row.attempt_role),
+      provider: String(row.provider_name), model: String(row.model_name), baseHost: row.base_host ? String(row.base_host) : null,
+      status: String(row.attempt_status), httpStatus: row.http_status === null ? null : Number(row.http_status),
+      providerJobId: row.provider_job_id ? String(row.provider_job_id) : null,
+      acceptedBillable: Boolean(row.accepted_billable), cacheHit: Boolean(row.cache_hit),
+      durationMs: row.duration_ms === null ? null : Number(row.duration_ms), error: row.error_message ? String(row.error_message) : null,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    });
+    attemptsByRequest.set(requestId, attempts);
+  }
+  return usage.map((item) => ({ ...item, attempts: item.requestId ? attemptsByRequest.get(item.requestId) || [] : [] }));
 }
 
 export async function refundGiftOpsAiUsage(actor: GiftEmployeeAccess, requestUid: string, note: string, ip?: string) {

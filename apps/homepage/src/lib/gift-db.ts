@@ -9,6 +9,26 @@ export type GiftApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspende
 export type GiftEmployeeRole = 'employee' | 'operator' | 'admin';
 export type GiftAiUsageType = 'render' | 'image_edit' | 'image_to_3d';
 
+export type GiftAiProviderAttemptInput = {
+  requestId?: string;
+  operation: 'generation' | 'edit';
+  stage: string;
+  slot?: number;
+  role: 'primary' | 'fallback' | 'cache';
+  provider: string;
+  model: string;
+  baseHost?: string;
+};
+
+export type GiftAiProviderAttemptUpdate = {
+  status: 'accepted' | 'succeeded' | 'failed' | 'skipped' | 'cache_hit';
+  httpStatus?: number;
+  providerJobId?: string;
+  acceptedBillable?: boolean;
+  cacheHit?: boolean;
+  error?: unknown;
+};
+
 export type GiftQuota = {
   renderDailyLimit: number;
   editDailyLimit: number;
@@ -85,6 +105,62 @@ export function databasePool() {
     connectTimeout: 10_000,
   });
   return globalThis.unionamGiftDatabasePool;
+}
+
+export async function startGiftAiProviderAttempt(input: GiftAiProviderAttemptInput) {
+  if (!input.requestId || input.requestId.startsWith('dev-')) return null;
+  try {
+    const [result] = await databasePool().execute<ResultSetHeader>(`
+      INSERT INTO gift_ai_provider_attempts (
+        usage_request_uid, operation_type, processing_stage, slot_index, attempt_role,
+        provider_name, model_name, base_host
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      input.requestId,
+      input.operation,
+      input.stage.slice(0, 64),
+      Number.isInteger(input.slot) ? Number(input.slot) : null,
+      input.role,
+      input.provider.slice(0, 64),
+      input.model.slice(0, 128),
+      input.baseHost?.slice(0, 255) || null,
+    ]);
+    return { id: Number(result.insertId), startedAt: Date.now() };
+  } catch (error) {
+    console.error('[gift-ai] Unable to start provider attempt log.', error);
+    return null;
+  }
+}
+
+export async function finishGiftAiProviderAttempt(
+  attempt: { id: number; startedAt: number } | null,
+  update: GiftAiProviderAttemptUpdate,
+) {
+  if (!attempt) return;
+  const message = update.error instanceof Error
+    ? update.error.message
+    : typeof update.error === 'string' ? update.error : null;
+  try {
+    await databasePool().execute<ResultSetHeader>(`
+      UPDATE gift_ai_provider_attempts SET
+        attempt_status = ?, http_status = ?, provider_job_id = ?, accepted_billable = ?, cache_hit = ?,
+        duration_ms = ?, error_message = ?,
+        completed_at = IF(? = 'accepted', NULL, CURRENT_TIMESTAMP(3))
+      WHERE id = ?
+    `, [
+      update.status,
+      Number.isInteger(update.httpStatus) ? Number(update.httpStatus) : null,
+      update.providerJobId?.slice(0, 255) || null,
+      update.acceptedBillable ? 1 : 0,
+      update.cacheHit ? 1 : 0,
+      Math.max(0, Date.now() - attempt.startedAt),
+      message?.slice(0, 500) || null,
+      update.status,
+      attempt.id,
+    ]);
+  } catch (error) {
+    console.error('[gift-ai] Unable to finish provider attempt log.', error);
+  }
 }
 
 function parseDepartments(value: unknown) {
@@ -471,14 +547,14 @@ export async function replaceGiftAiProviderJob(requestId: string, currentProvide
   return String(rows[0]?.provider_job_id || nextProviderJobId);
 }
 
-export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' | 'refunded', error?: unknown) {
+export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' | 'partial' | 'refunded', error?: unknown) {
   if (requestId.startsWith('dev-')) return;
   const connection = await databasePool().getConnection();
   try {
     await connection.beginTransaction();
     const [rows] = await connection.execute<RowDataPacket[]>('SELECT * FROM gift_ai_usage_events WHERE request_uid = ? FOR UPDATE', [requestId]);
     const usage = rows[0];
-    if (!usage || ['succeeded', 'refunded'].includes(usage.usage_status)) {
+    if (!usage || ['succeeded', 'partial', 'refunded'].includes(usage.usage_status)) {
       await connection.commit();
       return;
     }

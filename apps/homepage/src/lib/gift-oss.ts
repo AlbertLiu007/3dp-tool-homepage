@@ -182,13 +182,17 @@ async function ownedDraftRequest(actor: GiftEmployeeAccess, requestId: number) {
   return { id: Number(rows[0].id), requestNo: String(rows[0].request_no) };
 }
 
-async function findDraftAsset(requestId: number, kind: GiftDraftAssetKind, filters: { sha256?: string; providerJobId?: string }) {
+async function findDraftAsset(requestId: number, kind: GiftDraftAssetKind, filters: { sha256?: string; providerJobId?: string; transformationCacheKey?: string }) {
   const clauses = ['ra.request_id = ?', 'a.asset_kind = ?', "a.asset_status = 'active'"];
   const parameters: (string | number)[] = [requestId, kind];
   if (filters.sha256) { clauses.push('a.sha256 = ?'); parameters.push(filters.sha256); }
   if (filters.providerJobId) {
     clauses.push("JSON_UNQUOTE(JSON_EXTRACT(a.metadata, '$.providerJobId')) = ?");
     parameters.push(filters.providerJobId);
+  }
+  if (filters.transformationCacheKey) {
+    clauses.push('a.transformation_cache_key = ?');
+    parameters.push(filters.transformationCacheKey);
   }
   const [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT a.*, ra.request_id FROM gift_request_attachments ra
@@ -201,6 +205,12 @@ async function findDraftAsset(requestId: number, kind: GiftDraftAssetKind, filte
 export async function findGiftDraftGeneratedAsset(actor: GiftEmployeeAccess, requestId: number, providerJobId: string, kind: GiftDraftAssetKind) {
   await ownedDraftRequest(actor, requestId);
   return findDraftAsset(requestId, kind, { providerJobId });
+}
+
+export async function findGiftDraftImageByTransformationCacheKey(actor: GiftEmployeeAccess, requestId: number, cacheKey: string) {
+  await ownedDraftRequest(actor, requestId);
+  if (!/^[a-f0-9]{64}$/.test(cacheKey)) throw new GiftAccessError('Image transformation cache key is invalid.', 400, 'validation');
+  return findDraftAsset(requestId, 'render_image', { transformationCacheKey: cacheKey });
 }
 
 export async function assertGiftDraftAsset(actor: GiftEmployeeAccess, requestId: number, assetId: number) {
@@ -354,6 +364,12 @@ export async function persistGiftDraftGeneratedImage(input: {
     whiteBackgroundProcessor?: string;
     transparentBackground?: boolean;
     transparentBackgroundProcessor?: string;
+    quality?: {
+      foregroundRatio: number;
+      contrast: number;
+      borderWhiteRatio: number;
+      edgeForegroundRatio: number;
+    };
   };
   filename: string;
   kind?: Extract<GiftDraftAssetKind, 'render_image' | 'model_preview'>;
@@ -398,6 +414,7 @@ export async function persistGiftDraftGeneratedImage(input: {
       transparentBackground: false,
       imageBackground: 'white',
       ...(input.image.model ? { imageModel: input.image.model } : {}),
+      ...(input.image.quality ? { imageQuality: input.image.quality } : {}),
     },
   });
   return { assetId: asset.assetId, url: asset.url };

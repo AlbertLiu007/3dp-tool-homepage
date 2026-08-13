@@ -7,6 +7,7 @@
     "build": "NEXT_DIST_DIR=.next-build next build",
     "start": "NEXT_DIST_DIR=.next-build next start",
     "typecheck": "tsc --noEmit",
+    "verify:gift-image-quality": "tsx scripts/verify-gift-image-quality.ts",
     "backfill:gift-transparent-images": "tsx scripts/backfill-gift-transparent-images.ts",
     "migrate:gift-db": "node scripts/migrate-gift-db.mjs"
   },

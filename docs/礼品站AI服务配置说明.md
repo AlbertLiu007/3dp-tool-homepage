@@ -28,6 +28,8 @@ GPT_IMAGE_SIZE=1024x1024
 GPT_IMAGE_QUALITY=high
 ```
 
+`GPT_IMAGE_MODEL` 已废弃，生产环境存在该变量时服务会拒绝启动图片调用，避免旧变量把流量静默切回 Wan 等已下线模型。主模型与兜底模型必须不同，当前允许的生产模型为 `grok-imagine-image-quality` 和 `grok-imagine-image`。
+
 环境变量不得使用 `NEXT_PUBLIC_` 前缀，不得提交到 Git。
 
 ## 生产配置

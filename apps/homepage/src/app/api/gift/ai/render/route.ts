@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { generateGiftImages, GiftAiError, IMAGE_GENERATION_MODEL } from '@/lib/gift-ai';
+import { configuredImageGenerationModel, generateGiftImages, GiftAiError, publicGiftImageError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
-import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
+import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
 
@@ -16,7 +16,8 @@ function streamResponse(run: (send: (message: unknown) => void) => Promise<void>
     start(controller) {
       const send = (message: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(message)}\n`));
       void run(send).catch((error) => {
-        send({ type: 'error', error: error instanceof GiftAiError ? error.reason : 'internal', message: error instanceof Error ? error.message : 'Unexpected gift AI service error.' });
+        const publicError = publicGiftImageError(error);
+        send({ type: 'error', error: publicError.code, message: publicError.message });
       }).finally(() => controller.close());
     },
   });
@@ -50,20 +51,25 @@ export async function POST(request: Request) {
           requestNotes: body.brief,
           specifications: body.specifications,
         });
-      const reservation = await reserveGiftAiUsage(session, 'render', giftAiIdempotencyKey(request), { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL });
+      const configuredModel = configuredImageGenerationModel();
+      const reservation = await reserveGiftAiUsage(session, 'render', giftAiIdempotencyKey(request), { provider: 'krill-ai', model: configuredModel });
       return streamResponse(async (send) => {
         const startedAt = Date.now();
-        const tasks = new Map<number, Promise<{ index: number; image?: StreamImageMessage['image']; error?: string }>>();
+        const tasks = new Map<number, Promise<{ index: number; image?: StreamImageMessage['image']; error?: ReturnType<typeof publicGiftImageError> }>>();
         for (let index = 0; index < 3; index += 1) {
-          tasks.set(index, generateGiftImages(prompt, 1, monochromeColor).then(async (generated) => {
+          tasks.set(index, generateGiftImages(prompt, 1, monochromeColor, { requestId: reservation.requestId, stage: 'render', slot: index }).then(async (generated) => {
             const image = generated[0];
             if (!image) throw new GiftAiError('Image provider did not return an image.');
-            await updateGiftAiUsageModel(reservation.requestId, image.model || IMAGE_GENERATION_MODEL);
+            await updateGiftAiUsageModel(reservation.requestId, image.model || configuredModel);
+            if (image.providerJobId) await markGiftAiUsageRunning(reservation.requestId, image.providerJobId);
             const saved = local
               ? { ...image, assetId: index + 1 }
               : await persistGiftDraftGeneratedImage({ actor: employee!, requestId: draft.id, image, filename: `gift-render-${index + 1}.png`, metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: reservation.requestId } });
             return { index, image: saved };
-          }).catch((error) => ({ index, error: error instanceof Error ? error.message : 'This concept failed to generate.' })));
+          }).catch((error) => {
+            console.warn('Gift render slot failed after provider fallback:', { index, requestId: reservation.requestId, error });
+            return { index, error: publicGiftImageError(error) };
+          }));
         }
         let readyCount = 0;
         try {
@@ -74,10 +80,11 @@ export async function POST(request: Request) {
               readyCount += 1;
               send({ type: 'image', index: result.index, image: result.image, draft });
             } else {
-              send({ type: 'slot-error', index: result.index, message: result.error || 'This concept failed to generate.' });
+              send({ type: 'slot-error', index: result.index, error: result.error?.code || 'upstream', message: result.error?.message || 'Image generation is temporarily unavailable.', elapsedMs: Date.now() - startedAt });
             }
           }
-          if (readyCount > 0) await settleGiftAiUsage(reservation.requestId, 'succeeded');
+          if (readyCount === 3) await settleGiftAiUsage(reservation.requestId, 'succeeded');
+          else if (readyCount > 0) await settleGiftAiUsage(reservation.requestId, 'partial', new GiftAiError(`${3 - readyCount} of 3 gift concepts failed to generate.`));
           else await settleGiftAiUsage(reservation.requestId, 'refunded', new GiftAiError('All gift concepts failed to generate.'));
           send({ type: 'done', draft, elapsedMs: Date.now() - startedAt });
         } catch (error) {
@@ -91,9 +98,9 @@ export async function POST(request: Request) {
       const generated = await withGiftAiUsage(
         session,
         'render',
-        () => generateGiftImages(prompt, 3, monochromeColor),
+        ({ requestId }) => generateGiftImages(prompt, 3, monochromeColor, { requestId, stage: 'render' }),
         giftAiIdempotencyKey(request),
-        { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL },
+        { provider: 'krill-ai', model: configuredImageGenerationModel() },
       );
       return NextResponse.json({
         draft: { id: Number.isInteger(requestedDraftId) && requestedDraftId > 0 ? requestedDraftId : 1 },
@@ -111,8 +118,8 @@ export async function POST(request: Request) {
       specifications: body.specifications,
     });
     const images = await withGiftAiUsage(session, 'render', async ({ requestId }) => {
-      const generated = await generateGiftImages(prompt, 3, monochromeColor);
-      await updateGiftAiUsageModel(requestId, generated.find((image) => image.model)?.model || IMAGE_GENERATION_MODEL);
+      const generated = await generateGiftImages(prompt, 3, monochromeColor, { requestId, stage: 'render' });
+      await updateGiftAiUsageModel(requestId, generated.find((image) => image.model)?.model || configuredImageGenerationModel());
       return Promise.all(generated.map((image, index) => persistGiftDraftGeneratedImage({
         actor: employee,
         requestId: draft.id,
@@ -120,7 +127,7 @@ export async function POST(request: Request) {
         filename: `gift-render-${index + 1}.png`,
         metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: requestId },
       })));
-    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: IMAGE_GENERATION_MODEL });
+    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: configuredImageGenerationModel() });
     return NextResponse.json({ draft, images }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftAiErrorResponse(error);
