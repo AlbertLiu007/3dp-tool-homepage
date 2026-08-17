@@ -32,6 +32,25 @@ type ImageTaskResponse = {
   content_url?: string;
 };
 
+type ApimartTask = {
+  id?: string;
+  task_id?: string;
+  status?: string;
+  progress?: number;
+  message?: string;
+  error?: { message?: string } | string | null;
+  result?: {
+    images?: Array<{ url?: string | string[] }>;
+  };
+};
+
+type ApimartResponse = {
+  code?: number;
+  message?: string;
+  data?: ApimartTask | ApimartTask[];
+  error?: { message?: string } | string | null;
+};
+
 type TripoEnvelope<T> = {
   code?: number;
   message?: string;
@@ -114,6 +133,8 @@ const IMAGE_TASK_QUERY_TIMEOUT_MS = 30_000;
 const IMAGE_TASK_CONTENT_TIMEOUT_MS = 120_000;
 const IMAGE_TASK_POLL_INTERVAL_MS = 2_000;
 const IMAGE_TASK_MAX_POLLS = 90;
+const APIMART_TASK_POLL_INTERVAL_MS = 3_000;
+const APIMART_TASK_MAX_POLLS = 100;
 const SLA_PRINTABILITY_CONSTRAINT = [
   'SLA resin 3D printing design constraints for a production-ready gift render.',
   'Positive requirements: create one complete, physically connected, watertight closed single-shell solid object with a stable integrated base; every figure, ornament, weapon, accessory, ring, cable, leaf, gear, and decorative element must be joined to the main body or base and must be self-supporting.',
@@ -135,6 +156,9 @@ export const IMAGE_EDIT_MODEL = 'grok-imagine-image-quality';
 export const IMAGE_FALLBACK_MODEL = 'grok-imagine-image';
 export const IMAGE_DOMESTIC_BASE_URL = 'https://api.cdn-krill-ai.com/v1';
 export const IMAGE_FALLBACK_BASE_URL = IMAGE_DOMESTIC_BASE_URL;
+export const APIMART_IMAGE_MODEL = 'gpt-image-2';
+export const APIMART_IMAGE_BASE_URL = 'https://api.aishuch.com/v1';
+export const APIMART_IMAGE_RESOLUTION = '1k';
 const ALLOWED_IMAGE_MODELS = new Set([IMAGE_GENERATION_MODEL, IMAGE_EDIT_MODEL, IMAGE_FALLBACK_MODEL]);
 const IMAGE_CIRCUIT_FAILURE_THRESHOLD = 3;
 const IMAGE_CIRCUIT_OPEN_MS = 5 * 60_000;
@@ -236,6 +260,15 @@ async function fetchImageProvider(input: string, initFactory: () => RequestInit,
 }
 
 type ImageOperation = 'generation' | 'edit';
+type GiftImageProvider = 'apimart' | 'krill';
+
+function configuredGiftImageProvider(): GiftImageProvider {
+  const provider = process.env.GIFT_IMAGE_PROVIDER?.trim().toLowerCase() || 'apimart';
+  if (provider !== 'apimart' && provider !== 'krill') {
+    throw new GiftAiError('GIFT_IMAGE_PROVIDER must be either apimart or krill.', 503, 'configuration');
+  }
+  return provider;
+}
 
 function imageConfiguration() {
   const explicitBaseUrl = process.env.GPT_IMAGE_BASE_URL?.trim();
@@ -252,6 +285,18 @@ function imageConfiguration() {
     apiKey: requiredEnvironmentVariable('GPT_IMAGE_API_KEY'),
     size: process.env.GPT_IMAGE_SIZE?.trim() || '1024x1024',
     quality: process.env.GPT_IMAGE_QUALITY?.trim() || 'high',
+  };
+}
+
+function apimartImageConfiguration() {
+  const apiKey = process.env.APIMART_IMAGE_API_KEY?.trim();
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    baseUrl: normalizedBaseUrl(process.env.APIMART_IMAGE_BASE_URL?.trim() || APIMART_IMAGE_BASE_URL),
+    model: APIMART_IMAGE_MODEL,
+    size: process.env.APIMART_IMAGE_SIZE?.trim() || '1:1',
+    resolution: APIMART_IMAGE_RESOLUTION,
   };
 }
 
@@ -287,11 +332,19 @@ function imageModels(operation: ImageOperation) {
 }
 
 export function configuredImageGenerationModel() {
-  return imageModels('generation').primary;
+  return configuredGiftImageProvider() === 'apimart' ? APIMART_IMAGE_MODEL : imageModels('generation').primary;
+}
+
+export function configuredImageGenerationProvider() {
+  return configuredGiftImageProvider() === 'apimart' ? 'apimart' : 'krill-ai';
 }
 
 export function configuredImageEditModel() {
-  return imageModels('edit').primary;
+  return configuredGiftImageProvider() === 'apimart' ? APIMART_IMAGE_MODEL : imageModels('edit').primary;
+}
+
+export function configuredImageEditProvider() {
+  return configuredGiftImageProvider() === 'apimart' ? 'apimart' : 'krill-ai';
 }
 
 export function configuredImageFallbackModel() {
@@ -501,27 +554,33 @@ async function normalizeImage(payload: ImageApiResponse, baseUrl: string, apiKey
   const image = payload.data?.[0];
   if (image?.b64_json) return normalizedImageBuffer(Buffer.from(image.b64_json, 'base64'), model, options);
   if (image?.url) {
-    let response: Response;
-    try {
-      response = await fetch(providerImageUrl(baseUrl, image.url), {
-        cache: 'no-store',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: 'image/*',
-        },
-        signal: AbortSignal.timeout(120_000),
-      });
-    } catch (error) {
-      throw new ImageProviderUnavailableError(
-        error instanceof Error ? `Image result download failed: ${error.message}` : 'Image result download failed.',
-      );
-    }
-    if (!response.ok) throw new GiftAiError('Image provider returned an unreadable image URL.');
-    const contentType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
-    if (!contentType.startsWith('image/')) throw new GiftAiError('Image provider URL did not return an image.');
-    return normalizedImageBuffer(Buffer.from(await response.arrayBuffer()), model, options);
+    return downloadAndNormalizeImage(providerImageUrl(baseUrl, image.url), model, options, apiKey);
   }
   throw new GiftAiError(payload.error?.message || 'Image provider did not return an image.');
+}
+
+async function downloadAndNormalizeImage(url: string, model: string, options: ImageNormalizationOptions, apiKey?: string) {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        Accept: 'image/*',
+      },
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (error) {
+    throw new ImageProviderUnavailableError(
+      error instanceof Error ? `Image result download failed: ${error.message}` : 'Image result download failed.',
+    );
+  }
+  if (!response.ok) throw new GiftAiError('Image provider returned an unreadable image URL.');
+  const contentType = response.headers.get('content-type')?.split(';')[0] || 'image/png';
+  if (!contentType.startsWith('image/')) throw new GiftAiError('Image provider URL did not return an image.');
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) throw new GiftAiError('Generated image exceeds the image safety limit.');
+  return normalizedImageBuffer(buffer, model, options);
 }
 
 function imageTaskItem(payload: ImageTaskResponse) {
@@ -558,6 +617,202 @@ function imageResultResponse(payload: ImageTaskResponse): ImageApiResponse {
 
 const COMPLETED_IMAGE_TASK_STATUSES = new Set(['completed', 'succeeded', 'success', 'done']);
 const FAILED_IMAGE_TASK_STATUSES = new Set(['failed', 'error', 'cancelled', 'canceled']);
+
+function apimartTaskItem(payload: ApimartResponse) {
+  return Array.isArray(payload.data) ? payload.data[0] : payload.data;
+}
+
+function apimartTaskId(payload: ApimartResponse) {
+  const item = apimartTaskItem(payload);
+  return item?.task_id || item?.id;
+}
+
+function apimartTaskStatus(payload: ApimartResponse) {
+  return String(apimartTaskItem(payload)?.status || '').toLowerCase();
+}
+
+function apimartTaskError(payload: ApimartResponse) {
+  const error = apimartTaskItem(payload)?.error || payload.error;
+  if (typeof error === 'string') return error;
+  return error?.message || apimartTaskItem(payload)?.message || payload.message || 'APIMart image task failed.';
+}
+
+function apimartTaskImageUrl(payload: ApimartResponse) {
+  const imageUrl = apimartTaskItem(payload)?.result?.images?.[0]?.url;
+  return Array.isArray(imageUrl) ? imageUrl[0] : imageUrl;
+}
+
+async function readApimartResponse(response: Response): Promise<ApimartResponse> {
+  const text = await response.text();
+  let payload: ApimartResponse | undefined;
+  try {
+    payload = JSON.parse(text) as ApimartResponse;
+  } catch {
+    // Keep provider details out of the browser response.
+  }
+  const code = Number(payload?.code);
+  const effectiveStatus = Number.isFinite(code) && code >= 400 ? code : response.status;
+  if (!response.ok || effectiveStatus >= 400) {
+    const message = payload?.message || (typeof payload?.error === 'string' ? payload.error : payload?.error?.message) || `APIMart request failed with HTTP ${effectiveStatus}.`;
+    if (TRANSIENT_UPSTREAM_STATUSES.has(effectiveStatus)) throw new ImageProviderUnavailableError(message, effectiveStatus, false);
+    if (effectiveStatus === 401 || effectiveStatus === 403) throw new GiftAiError(message, effectiveStatus, 'authentication');
+    throw new ImageProviderRejectedError(message, effectiveStatus);
+  }
+  if (!payload) throw new GiftAiError('APIMart returned an invalid JSON response.');
+  return payload;
+}
+
+function generationPrompt(prompt: string) {
+  return /SLA engineering constraints/i.test(prompt) ? prompt : `${prompt}\n${PRINTABILITY_CONSTRAINT}`;
+}
+
+async function queryApimartTask(
+  configuration: NonNullable<ReturnType<typeof apimartImageConfiguration>>,
+  taskId: string,
+) {
+  const response = await fetchImageProvider(`${configuration.baseUrl}/tasks/${encodeURIComponent(taskId)}`, () => ({
+    method: 'GET',
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${configuration.apiKey}`,
+      Accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(IMAGE_TASK_QUERY_TIMEOUT_MS),
+  }));
+  return readApimartResponse(response);
+}
+
+async function resolveApimartTask(
+  configuration: NonNullable<ReturnType<typeof apimartImageConfiguration>>,
+  initialPayload: ApimartResponse,
+  taskId: string,
+  monochromeColor?: string,
+) {
+  let payload = initialPayload;
+  let consecutiveQueryFailures = 0;
+  for (let attempt = 0; attempt < APIMART_TASK_MAX_POLLS; attempt += 1) {
+    const status = apimartTaskStatus(payload);
+    if (COMPLETED_IMAGE_TASK_STATUSES.has(status)) {
+      const imageUrl = apimartTaskImageUrl(payload);
+      if (!imageUrl) throw new GiftAiError('APIMart completed the image task without returning an image URL.');
+      const image = await downloadAndNormalizeImage(
+        providerImageUrl(configuration.baseUrl, imageUrl),
+        configuration.model,
+        { monochromeColor, whiteBackground: true },
+      );
+      return { ...image, providerJobId: taskId };
+    }
+    if (FAILED_IMAGE_TASK_STATUSES.has(status)) throw new ImageTaskFailedError(apimartTaskError(payload));
+    if (attempt >= APIMART_TASK_MAX_POLLS - 1) break;
+    await new Promise((resolve) => setTimeout(resolve, APIMART_TASK_POLL_INTERVAL_MS));
+    try {
+      payload = await queryApimartTask(configuration, taskId);
+      consecutiveQueryFailures = 0;
+    } catch (error) {
+      consecutiveQueryFailures += 1;
+      if (consecutiveQueryFailures >= 5) {
+        throw new GiftAiError(
+          error instanceof Error ? error.message : 'APIMart image task status could not be queried.',
+          error instanceof GiftAiError ? error.status : 502,
+          'upstream',
+        );
+      }
+    }
+  }
+  throw new GiftAiError('APIMart image task did not finish within five minutes.', 504, 'upstream');
+}
+
+async function requestApimartGeneratedImage(
+  prompt: string,
+  monochromeColor?: string,
+  context: GiftImageInvocationContext = {},
+  operation: ImageOperation = 'generation',
+  imageUrls?: string[],
+) {
+  const configuration = apimartImageConfiguration();
+  if (!configuration) throw new GiftAiError('APIMART_IMAGE_API_KEY is not configured.', 503, 'configuration');
+  const attempt = await startGiftAiProviderAttempt({
+    requestId: context.requestId,
+    operation,
+    stage: context.stage || (operation === 'edit' ? 'image_edit' : 'render'),
+    slot: context.slot,
+    role: 'primary',
+    provider: 'apimart',
+    model: configuration.model,
+    baseHost: new URL(configuration.baseUrl).host,
+  });
+  let acceptedBillable = false;
+  let providerJobId: string | undefined;
+  let httpStatus: number | undefined;
+  try {
+    // Submission is billable and intentionally not retried. A network timeout
+    // can happen after the upstream accepted the task, so another provider must
+    // not be charged unless APIMart explicitly rejected the request.
+    const response = await fetchImageProvider(`${configuration.baseUrl}/images/generations`, () => ({
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${configuration.apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        model: configuration.model,
+        prompt: generationPrompt(prompt),
+        n: 1,
+        size: configuration.size,
+        resolution: configuration.resolution,
+        official_fallback: false,
+        ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+      }),
+      signal: AbortSignal.timeout(60_000),
+    }), 1);
+    httpStatus = response.status;
+    const payload = await readApimartResponse(response);
+    const taskId = apimartTaskId(payload);
+    if (!taskId) throw new GiftAiError('APIMart image generation did not return a task ID.');
+    providerJobId = taskId;
+    acceptedBillable = true;
+    await finishGiftAiProviderAttempt(attempt, {
+      status: 'accepted', httpStatus, providerJobId, acceptedBillable: true,
+    });
+    const image = await resolveApimartTask(configuration, payload, taskId, monochromeColor);
+    await finishGiftAiProviderAttempt(attempt, {
+      status: 'succeeded', httpStatus, providerJobId, acceptedBillable: true,
+    });
+    return image;
+  } catch (error) {
+    await finishGiftAiProviderAttempt(attempt, {
+      status: 'failed',
+      httpStatus: httpStatus || (error instanceof GiftAiError ? error.status : undefined),
+      providerJobId,
+      acceptedBillable,
+      error,
+    });
+    throw error;
+  }
+}
+
+async function imageFileDataUrl(file: File) {
+  const type = file.type?.startsWith('image/') ? file.type : 'image/png';
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) throw new GiftAiError('Reference image exceeds the image safety limit.', 400, 'validation');
+  return `data:${type};base64,${buffer.toString('base64')}`;
+}
+
+async function requestApimartEditedImage(
+  input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
+  context: GiftImageInvocationContext,
+) {
+  const imageUrls = [await imageFileDataUrl(input.image)];
+  let maskInstruction = '';
+  if (input.mask) {
+    imageUrls.push(await imageFileDataUrl(input.mask));
+    maskInstruction = ' The first reference image is the source image. The second reference image is an edit mask: change only the white mask area and preserve the black mask area exactly.';
+  }
+  const prompt = `${input.prompt}${maskInstruction}\n${input.whiteBackground ? WHITE_MATTE_PRINTABILITY_CONSTRAINT : PRINTABILITY_CONSTRAINT}`;
+  return requestApimartGeneratedImage(prompt, input.monochromeColor, context, 'edit', imageUrls);
+}
 
 async function queryImageTask(baseUrl: string, taskId: string, apiKey: string) {
   const response = await fetchImageProvider(`${baseUrl}/images/${encodeURIComponent(taskId)}`, () => ({
@@ -733,7 +988,7 @@ async function requestEditedImage(
   }
 }
 
-async function requestGeneratedImage(prompt: string, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
+async function requestKrillGeneratedImage(prompt: string, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
   const configuration = imageConfiguration();
   let lastError: unknown;
   let primaryError: unknown;
@@ -761,7 +1016,7 @@ async function requestGeneratedImage(prompt: string, monochromeColor?: string, c
         },
         body: JSON.stringify({
           model,
-          prompt: `${prompt}\n${PRINTABILITY_CONSTRAINT}`,
+          prompt: generationPrompt(prompt),
           size: configuration.size,
           quality: configuration.quality,
           response_format: usesAsyncImageResult(model) ? 'url' : 'b64_json',
@@ -799,6 +1054,35 @@ async function requestGeneratedImage(prompt: string, monochromeColor?: string, c
   throw lastError instanceof Error ? lastError : new GiftAiError('Image generation failed.');
 }
 
+async function requestGeneratedImage(prompt: string, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
+  if (configuredGiftImageProvider() === 'krill') return requestKrillGeneratedImage(prompt, monochromeColor, context);
+  const configuration = apimartImageConfiguration();
+  if (!configuration) throw new GiftAiError('APIMART_IMAGE_API_KEY is not configured.', 503, 'configuration');
+  const key = circuitKey('generation', configuration.model, configuration.baseUrl);
+  if (circuitOpen(key)) {
+    const skipped = await startGiftAiProviderAttempt({
+      requestId: context.requestId,
+      operation: 'generation',
+      stage: context.stage || 'render',
+      slot: context.slot,
+      role: 'primary',
+      provider: 'apimart',
+      model: configuration.model,
+      baseHost: new URL(configuration.baseUrl).host,
+    });
+    await finishGiftAiProviderAttempt(skipped, { status: 'skipped', error: 'Provider circuit is temporarily open.' });
+    throw new ImageProviderUnavailableError('APIMart image generation is temporarily paused after repeated failures.', 503, false);
+  }
+  try {
+    const image = await requestApimartGeneratedImage(prompt, monochromeColor, context);
+    recordCircuitSuccess(key);
+    return image;
+  } catch (error) {
+    if (error instanceof ImageProviderUnavailableError || error instanceof ImageProviderRejectedError) recordCircuitFailure(key);
+    throw error;
+  }
+}
+
 export async function generateGiftImages(prompt: string, count = 3, monochromeColor?: string, context: GiftImageInvocationContext = {}) {
   const safeCount = Math.min(Math.max(Math.floor(count), 1), 3);
   return Promise.all(Array.from({ length: safeCount }, (_, index) => requestGeneratedImage(prompt, monochromeColor, { ...context, slot: context.slot ?? index })));
@@ -813,6 +1097,20 @@ export function publicGiftImageError(error: unknown) {
 }
 
 export async function editGiftImage(input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
+  if (configuredGiftImageProvider() === 'apimart') {
+    const configuration = apimartImageConfiguration();
+    if (!configuration) throw new GiftAiError('APIMART_IMAGE_API_KEY is not configured.', 503, 'configuration');
+    const key = circuitKey('edit', configuration.model, configuration.baseUrl);
+    if (circuitOpen(key)) throw new ImageProviderUnavailableError('APIMart image editing is temporarily paused after repeated failures.', 503, false);
+    try {
+      const image = await requestApimartEditedImage(input, context);
+      recordCircuitSuccess(key);
+      return image;
+    } catch (error) {
+      if (error instanceof ImageProviderUnavailableError || error instanceof ImageProviderRejectedError) recordCircuitFailure(key);
+      throw error;
+    }
+  }
   const configuration = imageConfiguration();
   let lastError: unknown;
   let primaryError: unknown;

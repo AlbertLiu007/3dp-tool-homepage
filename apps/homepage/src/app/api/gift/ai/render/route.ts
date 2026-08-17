@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { configuredImageGenerationModel, generateGiftImages, GiftAiError, publicGiftImageError } from '@/lib/gift-ai';
+import { configuredImageGenerationModel, configuredImageGenerationProvider, generateGiftImages, GiftAiError, publicGiftImageError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
           specifications: body.specifications,
         });
       const configuredModel = configuredImageGenerationModel();
-      const reservation = await reserveGiftAiUsage(session, 'render', giftAiIdempotencyKey(request), { provider: 'krill-ai', model: configuredModel });
+      const reservation = await reserveGiftAiUsage(session, 'render', giftAiIdempotencyKey(request), { provider: configuredImageGenerationProvider(), model: configuredModel });
       return streamResponse(async (send) => {
         const startedAt = Date.now();
         const tasks = new Map<number, Promise<{ index: number; image?: StreamImageMessage['image']; error?: ReturnType<typeof publicGiftImageError> }>>();
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         'render',
         ({ requestId }) => generateGiftImages(prompt, 3, monochromeColor, { requestId, stage: 'render' }),
         giftAiIdempotencyKey(request),
-        { provider: 'krill-ai', model: configuredImageGenerationModel() },
+        { provider: configuredImageGenerationProvider(), model: configuredImageGenerationModel() },
       );
       return NextResponse.json({
         draft: { id: Number.isInteger(requestedDraftId) && requestedDraftId > 0 ? requestedDraftId : 1 },
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
         filename: `gift-render-${index + 1}.png`,
         metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: requestId },
       })));
-    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: configuredImageGenerationModel() });
+    }, giftAiIdempotencyKey(request), { provider: configuredImageGenerationProvider(), model: configuredImageGenerationModel() });
     return NextResponse.json({ draft, images }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftAiErrorResponse(error);

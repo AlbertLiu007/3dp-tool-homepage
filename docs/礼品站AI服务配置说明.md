@@ -2,8 +2,9 @@
 
 ## 服务关系
 
-- `grok-imagine-image-quality`：根据文字与客户画像生成礼品工艺渲染图，也用于继续编辑已生成图片。
-- `grok-imagine-image`：主模型在任务创建阶段明确不可用时的兜底模型；任务已经创建后不会重复提交其他模型，避免重复计费。
+- APIMart `gpt-image-2`：当前全部 AI 图片任务的唯一启用通道，包括文生图、白底图生图、表面材质渲染、继续编辑和蒙版参考编辑；固定使用 `1:1`、`1K`、单张异步任务，服务端通过 `/v1/tasks/{task_id}` 轮询并下载结果。
+- `grok-imagine-image-quality` 和 `grok-imagine-image`：Krill 调用代码与配置保留，但在 `GIFT_IMAGE_PROVIDER=apimart` 时完全不进入调用路径，不作为失败兜底。
+- APIMart 失败、超时或熔断时直接向业务端返回失败，不再提交 Krill，避免异常调用和重复计费。Krill 恢复后可经过验证再将 `GIFT_IMAGE_PROVIDER` 切换为 `krill`。
 - Tripo H3.1：将员工上传图片或选中的渲染图生成不带纹理的 GLB 几何模型；UnionAM 服务器负责转换为用于打印的 STL。
 - 浏览器只调用 UnionAM 自己的 `/api/gift/ai/*` 接口，第三方 Key 不会下发到前端。
 
@@ -19,6 +20,11 @@ TRIPO_3D_FACE_LIMIT=1500000
 TRIPO_3D_GEOMETRY_QUALITY=standard
 GIFT_3D_DEFAULT_LONGEST_MM=100
 
+GIFT_IMAGE_PROVIDER=apimart
+APIMART_IMAGE_BASE_URL=https://api.aishuch.com/v1
+APIMART_IMAGE_API_KEY=
+APIMART_IMAGE_SIZE=1:1
+
 GPT_IMAGE_BASE_URL=https://api.cdn-krill-ai.com/v1
 GPT_IMAGE_API_KEY=
 GPT_IMAGE_GENERATION_MODEL=grok-imagine-image-quality
@@ -27,6 +33,10 @@ GPT_IMAGE_FALLBACK_MODEL=grok-imagine-image
 GPT_IMAGE_SIZE=1024x1024
 GPT_IMAGE_QUALITY=high
 ```
+
+APIMart 图片生成和编辑固定使用模型 `gpt-image-2`、`resolution=1k`、`n=1` 和 `official_fallback=false`。`GIFT_IMAGE_PROVIDER=apimart` 时如未配置 `APIMART_IMAGE_API_KEY`，请求会明确失败，不会静默切回 Krill。
+
+国内生产环境默认使用 `https://api.aishuch.com/v1`。已验证的同源备用地址为 `https://api.apib.ai/v1` 和 `https://api.aiuxu.com/v1`；需要切换时只修改 `APIMART_IMAGE_BASE_URL`，不要同时重复提交任务。
 
 `GPT_IMAGE_MODEL` 已废弃，生产环境存在该变量时服务会拒绝启动图片调用，避免旧变量把流量静默切回 Wan 等已下线模型。主模型与兜底模型必须不同，当前允许的生产模型为 `grok-imagine-image-quality` 和 `grok-imagine-image`。
 

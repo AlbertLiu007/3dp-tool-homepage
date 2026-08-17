@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { configuredImageEditModel, configuredImageFallbackModel, editGiftImage, GiftAiError } from '@/lib/gift-ai';
+import { configuredImageEditModel, configuredImageEditProvider, editGiftImage, GiftAiError } from '@/lib/gift-ai';
 import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
@@ -21,14 +21,14 @@ async function transformationCacheKey(input: {
     ? createHash('sha256').update(Buffer.from(await input.mask.arrayBuffer())).digest('hex')
     : null;
   return createHash('sha256').update(JSON.stringify({
-    version: 'gift-white-edit-v3',
+    version: 'gift-white-edit-v4',
     imageHash,
     maskHash,
     prompt: input.prompt,
     monochromeColor: input.monochromeColor || null,
     stage: input.stage,
+    provider: configuredImageEditProvider(),
     primaryModel: configuredImageEditModel(),
-    fallbackModel: configuredImageFallbackModel(),
     background: 'white',
   })).digest('hex');
 }
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         'image_edit',
         ({ requestId }) => editGiftImage({ image, mask, prompt, monochromeColor, whiteBackground: true }, { requestId, stage: 'image_edit' }),
         giftAiIdempotencyKey(request),
-        { provider: 'krill-ai', model: configuredImageEditModel() },
+        { provider: configuredImageEditProvider(), model: configuredImageEditModel() },
       );
       return NextResponse.json({
         draft: { id: Number.isInteger(draftRequestId) && draftRequestId > 0 ? draftRequestId : 1 },
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
         metadata: { source: 'ai', stage, usageRequestId: requestId, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null, transformationCacheKey: cacheKey },
       });
       return { image: output, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null };
-    }, giftAiIdempotencyKey(request), { provider: 'krill-ai', model: configuredImageEditModel() });
+    }, giftAiIdempotencyKey(request), { provider: configuredImageEditProvider(), model: configuredImageEditModel() });
     return NextResponse.json({ draft, ...result }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return giftAiErrorResponse(error);
