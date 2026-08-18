@@ -850,11 +850,14 @@ const giftImageProcesses: Record<Exclude<GiftImageVariant, 'original'>, string> 
   large: 'image/resize,m_lfit,w_1600,h_1600/format,webp/quality,q_88',
 };
 
-export async function getGiftAssetUrl(
-  assetId: number,
-  disposition: 'inline' | 'attachment' = 'inline',
-  imageVariant: GiftImageVariant = 'card',
-) {
+type GiftAssetObject = {
+  objectKey: string;
+  originalFilename: string;
+  contentType: string;
+  publishedCatalogImage: boolean;
+};
+
+async function getGiftAssetObject(assetId: number): Promise<GiftAssetObject> {
   const [rows] = await databasePool().execute<RowDataPacket[]>(`
     SELECT a.bucket_name, a.object_key, a.original_filename, a.content_type,
       EXISTS (
@@ -870,17 +873,47 @@ export async function getGiftAssetUrl(
   const asset = rows[0];
   if (!asset) throw new GiftAccessError('Asset was not found.', 404, 'not_found');
   if (String(asset.bucket_name) !== required('GIFT_OSS_BUCKET')) throw new GiftAccessError('Asset bucket is not configured for this service.', 409, 'configuration');
+  return {
+    objectKey: String(asset.object_key),
+    originalFilename: String(asset.original_filename || 'unionam-asset'),
+    contentType: String(asset.content_type || 'application/octet-stream'),
+    publishedCatalogImage: Boolean(asset.published_catalog_image),
+  };
+}
+
+export async function getGiftAssetStream(
+  assetId: number,
+  disposition: 'inline' | 'attachment' = 'inline',
+  imageVariant: GiftImageVariant = 'card',
+) {
+  const asset = await getGiftAssetObject(assetId);
+  const optimizedImage = disposition === 'inline'
+    && asset.contentType.startsWith('image/')
+    && imageVariant !== 'original';
+  const client = await ossClient();
+  const result = await client.getStream(asset.objectKey, {
+    ...(optimizedImage ? { process: giftImageProcesses[imageVariant] } : {}),
+  });
+  return { ...asset, stream: result.stream, responseHeaders: result.res.headers };
+}
+
+export async function getGiftAssetUrl(
+  assetId: number,
+  disposition: 'inline' | 'attachment' = 'inline',
+  imageVariant: GiftImageVariant = 'card',
+) {
+  const asset = await getGiftAssetObject(assetId);
   // Browser requests arrive from outside the ECS VPC. Sign public OSS URLs for
   // display/download; uploads and server-side reads continue using the internal endpoint.
   const client = await ossClient({ internal: false });
   const optimizedImage = disposition === 'inline'
-    && String(asset.content_type || '').startsWith('image/')
+    && asset.contentType.startsWith('image/')
     && imageVariant !== 'original';
-  const expires = asset.published_catalog_image ? 24 * 60 * 60 : 10 * 60;
-  return client.signatureUrl(String(asset.object_key), {
+  const expires = asset.publishedCatalogImage ? 24 * 60 * 60 : 10 * 60;
+  return client.signatureUrl(asset.objectKey, {
     expires,
     ...(optimizedImage ? { process: giftImageProcesses[imageVariant] } : {}),
-    response: { 'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(String(asset.original_filename || 'unionam-asset'))}` },
+    response: { 'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(asset.originalFilename)}` },
   });
 }
 

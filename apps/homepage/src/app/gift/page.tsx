@@ -2539,25 +2539,34 @@ function RequestInfo({ label, value }: { label: string; value: string }) {
 
 function RequestAssetThumbnail({ request, language, onPreviewModel, onPreviewImage }: { request: MyGiftRequest; language: GiftLanguage; onPreviewModel: (model: GeneratedGiftModel) => void; onPreviewImage: (url: string) => void }) {
   const hasModel = Boolean(request.modelAssetId);
-  const thumbnailUrl = request.thumbnailAssetId ? `/api/gift/assets/${request.thumbnailAssetId}` : null;
+  const baseThumbnailUrl = request.thumbnailAssetId ? `/api/gift/assets/${request.thumbnailAssetId}?variant=thumb` : null;
+  const [thumbnailAttempt, setThumbnailAttempt] = useState(0);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const thumbnailUrl = baseThumbnailUrl ? `${baseThumbnailUrl}&retry=${thumbnailAttempt}` : null;
+  const imagePreviewUrl = request.thumbnailAssetId ? `/api/gift/assets/${request.thumbnailAssetId}?variant=large` : null;
   const extension = ['stl', 'glb', 'gltf'].includes(request.modelExtension || '') ? request.modelExtension as GeneratedGiftModel['modelType'] : 'stl';
+  const handleThumbnailError = () => {
+    if (thumbnailAttempt === 0) setThumbnailAttempt(1);
+    else setThumbnailFailed(true);
+  };
   const openAsset = () => {
     if (hasModel) {
       onPreviewModel({ jobId: `request:${request.id}`, modelUrl: `/api/gift/assets/${request.modelAssetId}`, modelType: extension, fileName: `${request.requestNo}.${extension}`, modelAssetId: request.modelAssetId || undefined, previewAssetId: request.thumbnailAssetId || undefined, previewModelAssetId: request.previewModelAssetId || undefined, previewModelUrl: request.previewModelAssetId ? `/api/gift/assets/${request.previewModelAssetId}` : undefined, previewModelType: request.previewModelAssetId ? 'glb' : undefined, previewImageUrl: thumbnailUrl || undefined });
     } else if (thumbnailUrl) {
-      onPreviewImage(thumbnailUrl);
+      onPreviewImage(imagePreviewUrl || thumbnailUrl);
     }
   };
-  return <div className="flex min-w-0 items-center gap-2"><button type="button" disabled={!hasModel && !thumbnailUrl} onClick={(event) => { event.stopPropagation(); openAsset(); }} className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-slate-50 ${hasModel || thumbnailUrl ? 'cursor-pointer border-cyan-200 hover:border-cyan-500' : 'cursor-default border-slate-100'}`} title={hasModel ? (language === 'zh' ? '点击解析 3D 模型' : 'Click to inspect 3D model') : thumbnailUrl ? (language === 'zh' ? '点击查看大图' : 'Click to view image') : undefined}>{thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center"><Layers3 className="h-6 w-6 text-slate-300" /></div>}{hasModel ? <span className="absolute bottom-0 left-0 right-0 bg-[#0b4f9c]/90 py-0.5 text-center text-[9px] font-black text-white">3D</span> : null}</button><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-black ${hasModel ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{hasModel ? (language === 'zh' ? '模型已生成' : 'Model ready') : (language === 'zh' ? '模型未生成' : 'Model not generated')}</span></div>;
+  return <div className="flex min-w-0 items-center gap-2"><button type="button" disabled={!hasModel && (!thumbnailUrl || thumbnailFailed)} onClick={(event) => { event.stopPropagation(); openAsset(); }} className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-slate-50 ${hasModel || (thumbnailUrl && !thumbnailFailed) ? 'cursor-pointer border-cyan-200 hover:border-cyan-500' : 'cursor-default border-slate-100'}`} title={hasModel ? (language === 'zh' ? '点击解析 3D 模型' : 'Click to inspect 3D model') : thumbnailUrl && !thumbnailFailed ? (language === 'zh' ? '点击查看大图' : 'Click to view image') : undefined}>{thumbnailUrl && !thumbnailFailed ? <img src={thumbnailUrl} alt="" loading="lazy" decoding="async" onError={handleThumbnailError} className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center text-center"><Layers3 className="h-6 w-6 text-slate-300" />{thumbnailFailed ? <span className="sr-only">{language === 'zh' ? '图片暂不可用' : 'Image unavailable'}</span> : null}</div>}{hasModel ? <span className="absolute bottom-0 left-0 right-0 bg-[#0b4f9c]/90 py-0.5 text-center text-[9px] font-black text-white">3D</span> : null}</button><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-black ${hasModel ? 'bg-emerald-50 text-emerald-700' : thumbnailFailed ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{hasModel ? (language === 'zh' ? '模型已生成' : 'Model ready') : thumbnailFailed ? (language === 'zh' ? '图片暂不可用' : 'Image unavailable') : (language === 'zh' ? '模型未生成' : 'Model not generated')}</span></div>;
 }
 
 function GiftImagePreviewModal({ url, language, onClose }: { url: string; language: GiftLanguage; onClose: () => void }) {
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
-  return <GiftModalPortal><div className="fixed inset-0 z-[9999] grid place-items-center bg-slate-950/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-label={language === 'zh' ? '图片预览' : 'Image preview'} className="relative max-h-[90vh] max-w-[92vw] overflow-hidden rounded-xl bg-white p-3 shadow-2xl"><button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm hover:bg-white" title={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button><img src={url} alt={language === 'zh' ? '申请图片预览' : 'Request image preview'} className="max-h-[84vh] max-w-[88vw] rounded-lg object-contain" /></div></div></GiftModalPortal>;
+  return <GiftModalPortal><div className="fixed inset-0 z-[9999] grid place-items-center bg-slate-950/70 p-5 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-label={language === 'zh' ? '图片预览' : 'Image preview'} className="relative max-h-[90vh] max-w-[92vw] overflow-hidden rounded-xl bg-white p-3 shadow-2xl"><button type="button" onClick={onClose} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-slate-600 shadow-sm hover:bg-white" title={language === 'zh' ? '关闭' : 'Close'}><X className="h-5 w-5" /></button>{failed ? <div className="grid min-h-48 min-w-72 place-items-center px-8 text-sm font-bold text-slate-500">{language === 'zh' ? '图片暂不可用，请稍后重试' : 'Image unavailable. Please retry later.'}</div> : <img src={url} alt={language === 'zh' ? '申请图片预览' : 'Request image preview'} onError={() => setFailed(true)} className="max-h-[84vh] max-w-[88vw] rounded-lg object-contain" />}</div></div></GiftModalPortal>;
 }
 
 function GiftModalPortal({ children }: { children: ReactNode }) {
