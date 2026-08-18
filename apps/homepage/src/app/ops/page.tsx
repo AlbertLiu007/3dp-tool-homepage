@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   BadgeCheck,
+  Calculator,
   Boxes,
   CheckCircle2,
   ClipboardList,
@@ -33,7 +34,7 @@ import {
   type OpsPrintRequest,
 } from '@/components/gift/ops-library-panels';
 
-type OpsModule = 'dashboard' | 'employees' | 'ai' | 'models' | 'requests' | 'audit';
+type OpsModule = 'dashboard' | 'employees' | 'ai' | 'models' | 'pricing' | 'requests' | 'audit';
 type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 type EmployeeRole = 'employee' | 'operator' | 'admin';
 
@@ -72,12 +73,14 @@ type GiftModelRow = OpsGiftModel;
 type PrintRequestRow = OpsPrintRequest;
 type AuditEvent = { id: number; actorName: string; action: string; entityType: string; entityId: string; summary: string; requestIp?: string | null; createdAt: string };
 type EmployeeDetail = { employee: Record<string, unknown>; approvals: { id: number; fromStatus: string | null; toStatus: string; note: string | null; actorName: string; createdAt: string }[]; usage: AiUsage[] };
+type QuoteSettings = { id: number; materialId: string; materialName: string; materialCategory: string; printProcess: string; descriptionZh: string | null; densityGPerCm3: number; materialPricePerG: number; surfacePricePerMm2: number; minimumPrice: number; wasteRate: number; marginRate: number; leadDays: number | null; status: 'active' | 'inactive'; versionNumber: number };
 
 const moduleItems: { id: OpsModule; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: '运营概览', icon: LayoutDashboard },
   { id: 'employees', label: '员工与权限', icon: Users },
   { id: 'ai', label: 'AI 用量与任务', icon: Cpu },
   { id: 'models', label: '模型库', icon: Boxes },
+  { id: 'pricing', label: '礼品报价设置', icon: Calculator },
   { id: 'requests', label: '打印申请', icon: ClipboardList },
   { id: 'audit', label: '操作审计', icon: History },
 ];
@@ -180,6 +183,27 @@ function AuditPanel({ events }: { events: AuditEvent[] }) {
   return events.length ? <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="space-y-5">{events.map((item) => <div key={item.id} className="flex gap-4"><div className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-cyan-50 text-cyan-700"><Activity className="h-4 w-4" /></div><div className="min-w-0 flex-1 border-b border-slate-100 pb-5"><div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-800">{item.summary}</p><span className="text-[11px] text-slate-400">{dateTime(item.createdAt)}</span></div><p className="mt-1 text-xs text-slate-500">{item.actorName} · {item.entityType} #{item.entityId}{item.requestIp ? ` · ${item.requestIp}` : ''}</p></div></div>)}</div></div> : <EmptyBlock text="暂无审计记录" />;
 }
 
+function PricingPanel({ settings, csrfToken, onReload }: { settings: QuoteSettings[]; csrfToken: string; onReload: () => void }) {
+  const current = settings[0];
+  const [form, setForm] = useState<QuoteSettings | null>(current || null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => setForm(current || null), [current]);
+  if (!form) return <EmptyBlock text="尚未配置礼品报价参数" />;
+  const updateNumber = (key: keyof QuoteSettings, value: string) => setForm({ ...form, [key]: Number(value) });
+  async function save() {
+    setSaving(true); setMessage('');
+    try {
+      const response = await fetch('/api/gift/ops/pricing', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'x-unionam-csrf': csrfToken }, body: JSON.stringify(form) });
+      const result = await response.json() as { message?: string };
+      if (!response.ok) throw new Error(result.message || '保存失败');
+      setMessage('报价设置已保存，新提交申请将使用新版本参数。'); onReload();
+    } catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
+    finally { setSaving(false); }
+  }
+  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-start justify-between"><div><h2 className="text-lg font-black">SLA 礼品材料报价</h2><p className="mt-1 text-xs font-bold text-slate-400">版本 {form.versionNumber} · 参数来源：联泰礼品站材料报价表</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{form.status === 'active' ? '已启用' : '已停用'}</span></div><div className="mt-6 grid gap-4 md:grid-cols-2"><label className="text-xs font-black text-slate-600">材料名称<input value={form.materialName} onChange={(e) => setForm({ ...form, materialName: e.target.value })} className="mt-1.5 h-10 w-full rounded-md border border-slate-200 px-3" /></label><label className="text-xs font-black text-slate-600">打印工艺<input value={form.printProcess} onChange={(e) => setForm({ ...form, printProcess: e.target.value })} className="mt-1.5 h-10 w-full rounded-md border border-slate-200 px-3" /></label>{([['密度（g/cm³）', 'densityGPerCm3', '0.01'], ['材料单价（元/g）', 'materialPricePerG', '0.0001'], ['表面积单价（元/mm²）', 'surfacePricePerMm2', '0.000001'], ['材料起步价（元）', 'minimumPrice', '0.01'], ['损耗率', 'wasteRate', '0.001'], ['利润率', 'marginRate', '0.001'], ['交期（天）', 'leadDays', '1']] as const).map(([label, key, step]) => <label key={key} className="text-xs font-black text-slate-600">{label}<input type="number" min="0" step={step} value={form[key] ?? 0} onChange={(e) => updateNumber(key, e.target.value)} className="mt-1.5 h-10 w-full rounded-md border border-slate-200 px-3 font-mono" /></label>)}</div><label className="mt-4 block text-xs font-black text-slate-600">材料说明<textarea rows={3} value={form.descriptionZh || ''} onChange={(e) => setForm({ ...form, descriptionZh: e.target.value })} className="mt-1.5 w-full rounded-md border border-slate-200 p-3" /></label>{message ? <p className="mt-4 rounded-md bg-slate-50 p-3 text-xs font-bold text-slate-600">{message}</p> : null}<button disabled={saving} onClick={() => void save()} className="mt-5 inline-flex h-11 items-center rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white disabled:opacity-50">{saving ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}保存报价设置</button></div><div className="h-fit rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-black">计算公式</h3><div className="mt-4 space-y-3 text-xs font-bold leading-6 text-slate-600"><p>重量 = 模型体积 × 材料密度</p><p>材料费 = 重量 × 材料克重单价</p><p>表面积费 = 表面积 × 表面积单价</p><p>损耗 =（材料费 + 表面积费）× 损耗率</p><p>成本小计 = 材料费 + 表面积费 + 损耗</p><p className="rounded-md bg-cyan-50 p-3 text-cyan-900">报价 = max(材料起步价, 成本小计 × (1 + 利润率)) × 数量</p></div></div></div>;
+}
+
 export default function GiftOpsPage() {
   const { language, setLanguage, t: headerLabels } = useLanguage();
   const [sessionState, setSessionState] = useState<'loading' | 'guest' | 'forbidden' | 'ready'>('loading');
@@ -193,6 +217,7 @@ export default function GiftOpsPage() {
   const [usage, setUsage] = useState<AiUsage[]>([]);
   const [models, setModels] = useState<GiftModelRow[]>([]);
   const [requests, setRequests] = useState<PrintRequestRow[]>([]);
+  const [pricing, setPricing] = useState<QuoteSettings[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [inWeCom] = useState(() => typeof navigator !== 'undefined' && /wxwork|wecom/i.test(navigator.userAgent));
   const navItems = [{ label: headerLabels.navQuote, href: 'https://unionam.com/quote' }, { label: headerLabels.navConverter, href: 'https://unionam.com/converter' }, { label: headerLabels.navGift, href: 'https://unionam.com/gift' }];
@@ -203,7 +228,7 @@ export default function GiftOpsPage() {
 
   const loadModule = useCallback(async (target: OpsModule) => {
     setLoading(true); setError(null);
-    const endpoints: Record<OpsModule, string> = { dashboard: '/api/gift/ops/dashboard', employees: '/api/gift/ops/employees', ai: '/api/gift/ops/ai-usage', models: '/api/gift/ops/models', requests: '/api/gift/ops/requests', audit: '/api/gift/ops/audit' };
+    const endpoints: Record<OpsModule, string> = { dashboard: '/api/gift/ops/dashboard', employees: '/api/gift/ops/employees', ai: '/api/gift/ops/ai-usage', models: '/api/gift/ops/models', pricing: '/api/gift/ops/pricing', requests: '/api/gift/ops/requests', audit: '/api/gift/ops/audit' };
     try {
       const response = await fetch(endpoints[target], { cache: 'no-store', credentials: 'same-origin' });
       const payload = await response.json() as Record<string, unknown> & { message?: string };
@@ -212,6 +237,7 @@ export default function GiftOpsPage() {
       if (target === 'employees') setEmployees(payload.employees as OpsEmployee[]);
       if (target === 'ai') setUsage(payload.usage as AiUsage[]);
       if (target === 'models') setModels(payload.models as GiftModelRow[]);
+      if (target === 'pricing') setPricing(payload.settings as QuoteSettings[]);
       if (target === 'requests') setRequests(payload.requests as PrintRequestRow[]);
       if (target === 'audit') setAudit(payload.audit as AuditEvent[]);
     } catch (loadError) { setError(loadError instanceof Error ? loadError.message : '数据加载失败'); } finally { setLoading(false); }
@@ -220,6 +246,10 @@ export default function GiftOpsPage() {
   useEffect(() => { fetch('/api/gift/auth/session', { cache: 'no-store', credentials: 'same-origin' }).then(async (response) => { const payload = await response.json() as { authenticated?: boolean; user?: OpsEmployee; csrfToken?: string }; if (!response.ok || !payload.authenticated || !payload.user) { if (inWeCom && !new URLSearchParams(window.location.search).get('auth_error') && !window.sessionStorage.getItem('unionam.wecom.silent-login-attempt')) { window.sessionStorage.setItem('unionam.wecom.silent-login-attempt', '1'); window.location.replace('/api/gift/auth/wecom/silent?return_to=ops'); return; } return setSessionState('guest'); } window.sessionStorage.removeItem('unionam.wecom.silent-login-attempt'); if (!['operator', 'admin'].includes(payload.user.role) || payload.user.approvalStatus !== 'approved') return setSessionState('forbidden'); setCurrentUser(payload.user); setCsrfToken(payload.csrfToken || ''); setSessionState('ready'); }).catch(() => setSessionState('guest')); }, [inWeCom]);
   useEffect(() => { if (sessionState === 'ready') void loadModule(module); }, [sessionState, module, loadModule]);
   async function logout() { await fetch('/api/gift/auth/logout', { method: 'POST', credentials: 'same-origin' }); window.location.reload(); }
+
+  if (sessionState === 'ready' && currentUser && module === 'pricing') {
+    return <main className="min-h-screen bg-slate-100 text-slate-950"><ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} /><div className="mx-auto max-w-[1400px] px-5 py-7"><div className="mb-5 flex items-center justify-between"><div><button type="button" onClick={() => setModule('dashboard')} className="text-xs font-black text-[#0b4f9c]">← 返回运营后台</button><h1 className="mt-2 text-3xl font-black">礼品报价设置</h1></div><button onClick={() => void loadModule('pricing')} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</button></div><ErrorBlock message={error} />{loading ? <LoadingBlock /> : <PricingPanel settings={pricing} csrfToken={csrfToken} onReload={() => void loadModule('pricing')} />}</div></main>;
+  }
 
   return <main className="min-h-screen bg-slate-100 text-slate-950"><ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} />{sessionState === 'loading' ? <LoadingBlock /> : null}{sessionState === 'guest' ? <section className="mx-auto grid min-h-[520px] max-w-xl place-items-center px-5"><div className="w-full rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm"><LogIn className="mx-auto h-10 w-10 text-[#0b4f9c]" /><h1 className="mt-5 text-2xl font-black">礼品站运营后台</h1><p className="mt-3 text-sm font-medium text-slate-500">仅允许已授权的企业微信管理员和运营员进入。</p><p className="mt-2 text-xs leading-5 text-slate-400">在企业微信工作台打开时将自动使用当前账号登录；普通浏览器会进入官方扫码页。</p><a href={`${process.env.NODE_ENV === 'production' ? 'https://unionam.com' : ''}/api/gift/auth/wecom/${inWeCom ? 'silent' : 'start'}?return_to=ops`} className="mt-6 inline-flex h-11 items-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white"><LogIn className="h-4 w-4" />企业微信登录</a>{process.env.NODE_ENV !== 'production' ? <button onClick={async () => { await fetch('/api/gift/auth/dev-login', { method: 'POST' }); window.location.reload(); }} className="mx-auto mt-3 block text-xs font-bold text-slate-400">本地开发：模拟管理员登录</button> : null}</div></section> : null}{sessionState === 'forbidden' ? <section className="mx-auto grid min-h-[520px] max-w-xl place-items-center px-5"><div className="w-full rounded-xl border border-amber-200 bg-white p-8 text-center shadow-sm"><ShieldAlert className="mx-auto h-10 w-10 text-amber-600" /><h1 className="mt-5 text-2xl font-black">暂无运营后台权限</h1><p className="mt-3 text-sm text-slate-500">请联系管理员授予 operator 或 admin 角色。</p></div></section> : null}{sessionState === 'ready' && currentUser ? <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6"><div className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div><div className="flex items-center gap-2 text-xs font-black text-cyan-700"><ShieldCheck className="h-4 w-4" />UnionAM Gift Operations</div><div className="mt-1 text-sm font-bold text-slate-600">{currentUser.name} · {currentUser.role}</div></div><div className="flex gap-2"><button onClick={() => void loadModule(module)} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-black text-slate-600"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />刷新</button><button onClick={() => void logout()} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-black text-slate-500"><LogOut className="h-4 w-4" />退出</button></div></div><div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]"><aside className="h-fit rounded-xl border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-24">{moduleItems.map((item) => <button key={item.id} onClick={() => setModule(item.id)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-black transition ${module === item.id ? 'bg-[#0b4f9c] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-[#0b4f9c]'}`}><item.icon className="h-4 w-4" />{item.label}</button>)}</aside><section className="min-w-0"><div className="mb-5"><div className="flex items-center gap-2 text-xs font-black text-cyan-700"><BadgeCheck className="h-4 w-4" />{moduleItems.find((item) => item.id === module)?.label}</div><h1 className="mt-2 text-3xl font-black">{module === 'dashboard' ? '礼品站运营概览' : moduleItems.find((item) => item.id === module)?.label}</h1></div><ErrorBlock message={error} />{loading && !error ? <LoadingBlock /> : null}{!loading && !error && module === 'dashboard' ? <DashboardPanel data={dashboard} /> : null}{!loading && !error && module === 'employees' ? <EmployeesPanel employees={employees} currentUser={currentUser} csrfToken={csrfToken} onReload={() => void loadModule('employees')} /> : null}{!loading && !error && module === 'ai' ? <AiPanel usage={usage} csrfToken={csrfToken} onReload={() => void loadModule('ai')} /> : null}{!loading && !error && module === 'models' ? <CompleteModelsPanel models={models} csrfToken={csrfToken} onReload={() => void loadModule('models')} /> : null}{!loading && !error && module === 'requests' ? <CompleteRequestsPanel requests={requests} csrfToken={csrfToken} onReload={() => void loadModule('requests')} /> : null}{!loading && !error && module === 'audit' ? <AuditPanel events={audit} /> : null}</section></div></div> : null}</main>;
 }

@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool, GiftAccessError, requireGiftEmployeeAccess, type GiftEmployeeAccess } from '@/lib/gift-db';
 import type { GiftSession } from '@/lib/gift-auth';
+import { calculateGiftQuote, parseGiftQuoteMeasurement } from '@/lib/gift-pricing';
+import { getActiveGiftQuoteSettings } from '@/lib/gift-pricing-db';
 
 const requestTypes = new Set(['catalog_gift', 'ai_gift', 'business_sample']);
 const finishTypes = new Set(['white', 'paint', 'bronze', 'other']);
@@ -142,6 +144,13 @@ function normalizeRequest(row: RowDataPacket) {
     modelAssetId: row.model_asset_id ? Number(row.model_asset_id) : null,
     modelExtension: row.model_extension ? String(row.model_extension) : null,
     previewModelAssetId: row.preview_model_asset_id ? Number(row.preview_model_asset_id) : null,
+    estimatedUnitPrice: row.estimated_unit_price === null ? null : Number(row.estimated_unit_price),
+    estimatedTotalPrice: row.estimated_total_price === null ? null : Number(row.estimated_total_price),
+    estimatedWeightG: row.estimated_weight_g === null ? null : Number(row.estimated_weight_g),
+    estimatedVolumeCm3: row.estimated_volume_cm3 === null ? null : Number(row.estimated_volume_cm3),
+    estimatedSurfaceAreaMm2: row.estimated_surface_area_mm2 === null ? null : Number(row.estimated_surface_area_mm2),
+    quoteScalePercent: row.quote_scale_percent === null ? null : Number(row.quote_scale_percent),
+    quoteSnapshot: parseJson<Record<string, unknown> | null>(row.quote_snapshot, null),
   };
 }
 
@@ -287,17 +296,25 @@ export async function submitGiftAiDraft(session: GiftSession, draftRequestId: nu
       WHERE ra.request_id = ? AND a.asset_kind = 'model_file'
       ORDER BY ra.created_at DESC LIMIT 1
     `, [draftRequestId]);
-    if (!assetRows[0]) throw new GiftAccessError('Generate a 3D model before submitting the print request.', 409, 'validation');
+  if (!assetRows[0]) throw new GiftAccessError('Generate a 3D model before submitting the print request.', 409, 'validation');
+    const quantity = positiveInteger(input.quantity);
+    const quoteMeasurement = parseGiftQuoteMeasurement(input.quoteMeasurement);
+    const quoteSettings = quoteMeasurement ? await getActiveGiftQuoteSettings() : null;
+    const quote = quoteSettings && quoteMeasurement ? calculateGiftQuote(quoteSettings, quoteMeasurement, quantity) : null;
     await connection.execute<ResultSetHeader>(`
       UPDATE gift_print_requests SET title = ?, customer_company = ?, business_scene = ?, quantity = ?,
         finish_type = ?, paint_color = ?, requested_completion_date = ?, pickup_location = ?, request_notes = ?,
-        specifications = ?, source_asset_id = ?, request_status = 'submitted', submitted_at = CURRENT_TIMESTAMP(3)
+        specifications = ?, source_asset_id = ?, quote_setting_id = ?, estimated_unit_price = ?, estimated_total_price = ?,
+        estimated_weight_g = ?, estimated_volume_cm3 = ?, estimated_surface_area_mm2 = ?, quote_scale_percent = ?, quote_snapshot = ?,
+        request_status = 'submitted', submitted_at = CURRENT_TIMESTAMP(3)
       WHERE id = ?
     `, [
-      title, text(input.customerCompany, 255), text(input.businessScene, 128), positiveInteger(input.quantity),
+      title, text(input.customerCompany, 255), text(input.businessScene, 128), quantity,
       finishType, paintColor, dateOnly(input.requestedCompletionDate), text(input.pickupLocation, 255) || '上海总部前台',
       text(input.requestNotes, 5000), input.specifications && typeof input.specifications === 'object' ? JSON.stringify(input.specifications) : null,
-      assetRows[0].id, draftRequestId,
+      assetRows[0].id, quote?.settingsId || null, quote?.unitPrice ?? null, quote?.totalPrice ?? null, quote?.weightG ?? null,
+      quoteMeasurement?.volumeCm3 ?? null, quoteMeasurement?.surfaceAreaMm2 ?? null, quoteMeasurement?.scalePercent ?? null,
+      quote ? JSON.stringify({ ...quote, measurement: quoteMeasurement, settings: quoteSettings }) : null, draftRequestId,
     ]);
     await connection.execute<ResultSetHeader>(`
       INSERT INTO gift_request_events (request_id, actor_employee_id, event_type, from_status, to_status, comment_text)
@@ -329,6 +346,10 @@ export async function createGiftPrintRequest(session: GiftSession, input: Record
   }
   const requestNo = giftRequestNumber();
   const title = text(input.title, 255, true);
+  const quantity = positiveInteger(input.quantity);
+  const quoteMeasurement = parseGiftQuoteMeasurement(input.quoteMeasurement);
+  const quoteSettings = quoteMeasurement ? await getActiveGiftQuoteSettings() : null;
+  const quote = quoteSettings && quoteMeasurement ? calculateGiftQuote(quoteSettings, quoteMeasurement, quantity) : null;
   const connection = await databasePool().getConnection();
   try {
     await connection.beginTransaction();
@@ -336,14 +357,18 @@ export async function createGiftPrintRequest(session: GiftSession, input: Record
       INSERT INTO gift_print_requests (
         request_no, requester_employee_id, request_type, model_id, title, customer_company, business_scene,
         quantity, finish_type, paint_color, requested_completion_date, pickup_location, request_notes,
-        specifications, priority, request_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted')
+        specifications, priority, quote_setting_id, estimated_unit_price, estimated_total_price, estimated_weight_g,
+        estimated_volume_cm3, estimated_surface_area_mm2, quote_scale_percent, quote_snapshot, request_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted')
     `, [
       requestNo, employee.id, requestType, modelId, title, text(input.customerCompany, 255), text(input.businessScene, 128),
-      positiveInteger(input.quantity), finishType, paintColor, dateOnly(input.requestedCompletionDate),
+      quantity, finishType, paintColor, dateOnly(input.requestedCompletionDate),
       text(input.pickupLocation, 255) || '上海总部前台', text(input.requestNotes, 5000),
       input.specifications && typeof input.specifications === 'object' ? JSON.stringify(input.specifications) : null,
       ['low', 'normal', 'high', 'urgent'].includes(String(input.priority)) ? String(input.priority) : 'normal',
+      quote?.settingsId || null, quote?.unitPrice ?? null, quote?.totalPrice ?? null, quote?.weightG ?? null,
+      quoteMeasurement?.volumeCm3 ?? null, quoteMeasurement?.surfaceAreaMm2 ?? null, quoteMeasurement?.scalePercent ?? null,
+      quote ? JSON.stringify({ ...quote, measurement: quoteMeasurement, settings: quoteSettings }) : null,
     ]);
     await connection.execute<ResultSetHeader>(`
       INSERT INTO gift_request_events (request_id, actor_employee_id, event_type, to_status, comment_text)

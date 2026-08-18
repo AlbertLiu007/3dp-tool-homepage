@@ -10,6 +10,7 @@ import { measureGiftModel } from '@/lib/model/model-measure';
 import { parseGiftModelBuffer } from '@/lib/model/parse-model';
 import { createScaledStlBlob } from '@/lib/model/export-scaled-stl';
 import type { GiftModelMeasurement } from '@/lib/model/model-types';
+import { calculateGiftQuote, type GiftQuoteMeasurement, type GiftQuoteSettings } from '@/lib/gift-pricing';
 
 export type GeneratedGiftModel = {
   jobId: string;
@@ -24,6 +25,17 @@ export type GeneratedGiftModel = {
   previewModelUrl?: string;
   previewModelType?: 'glb' | 'gltf';
 };
+
+export type GiftModelQuoteMeasurement = GiftQuoteMeasurement;
+const giftModelQuoteCache = new Map<string, GiftModelQuoteMeasurement>();
+
+export function readGiftModelQuoteMeasurement(model: Pick<GeneratedGiftModel, 'modelUrl' | 'modelAssetId'>) {
+  return giftModelQuoteCache.get(model.modelAssetId ? `asset:${model.modelAssetId}` : `url:${model.modelUrl}`) || null;
+}
+
+function cacheGiftModelQuote(model: GeneratedGiftModel, measurement: GiftModelQuoteMeasurement) {
+  giftModelQuoteCache.set(model.modelAssetId ? `asset:${model.modelAssetId}` : `url:${model.modelUrl}`, measurement);
+}
 
 const modalCopy = {
   zh: {
@@ -217,9 +229,19 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
   const [scaledDownloadUrl, setScaledDownloadUrl] = useState<string | null>(null);
   const [scaleSaving, setScaleSaving] = useState(false);
   const [scaleError, setScaleError] = useState(false);
+  const [quoteSettings, setQuoteSettings] = useState<GiftQuoteSettings | null>(null);
   const scaledDownloadUrlRef = useRef<string | null>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/gift/pricing', { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => response.ok ? response.json() as Promise<{ settings?: GiftQuoteSettings }> : null)
+      .then((data) => { if (active && data?.settings) setQuoteSettings(data.settings); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -318,6 +340,16 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     if (scaledDownloadUrlRef.current) URL.revokeObjectURL(scaledDownloadUrlRef.current);
   }, []);
 
+  useEffect(() => {
+    if (scalePercent !== savedScalePercent || measurement?.volumeCm3 === null || measurement?.surfaceAreaMm2 === null || !measurement) return;
+    const scale = scalePercent / 100;
+    cacheGiftModelQuote(model, {
+      volumeCm3: measurement.volumeCm3 * scale ** 3,
+      surfaceAreaMm2: measurement.surfaceAreaMm2 * scale ** 2,
+      scalePercent,
+    });
+  }, [measurement, model, savedScalePercent, scalePercent]);
+
   function isValidScaleInput(value: string) {
     if (!/^\d+$/.test(value)) return false;
     const parsed = Number(value);
@@ -386,6 +418,10 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
     surfaceAreaMm2: measurement.surfaceAreaMm2 === null ? null : measurement.surfaceAreaMm2 * scale ** 2,
     triangleCount: measurement.triangleCount,
   } : null;
+  const quoteMeasurement = scaledMeasurement?.volumeCm3 && scaledMeasurement.surfaceAreaMm2
+    ? { volumeCm3: scaledMeasurement.volumeCm3, surfaceAreaMm2: scaledMeasurement.surfaceAreaMm2, scalePercent }
+    : null;
+  const quote = quoteSettings && quoteMeasurement ? calculateGiftQuote(quoteSettings, quoteMeasurement, 1) : null;
   const scalePending = scalePercent !== savedScalePercent;
   // The download target is always the original source asset. The lightweight
   // preview is only used for rendering and must never become the download URL.
@@ -449,6 +485,10 @@ export function GiftModelModal({ language, model, onClose }: { language: 'zh' | 
               <div className="min-w-0"><span className="text-slate-400">{labels.volume}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement?.volumeCm3 !== null && scaledMeasurement?.volumeCm3 !== undefined ? `${formatNumber(scaledMeasurement.volumeCm3, language, 2)} cm³` : '--'}</strong></div>
               <div className="min-w-0 text-center"><span className="text-slate-400">{labels.surfaceArea}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement?.surfaceAreaMm2 !== null && scaledMeasurement?.surfaceAreaMm2 !== undefined ? `${formatNumber(scaledMeasurement.surfaceAreaMm2, language, 0)} mm²` : '--'}</strong></div>
               <div className="min-w-0 text-right"><span className="text-slate-400">{labels.triangles}：</span><strong className="whitespace-nowrap text-slate-900">{scaledMeasurement ? scaledMeasurement.triangleCount.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US') : '--'}</strong></div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-100 pt-2">
+              <span className="text-slate-400">预估费用：</span>
+              <strong className="whitespace-nowrap text-[#0b4f9c]">{quote ? `¥${quote.unitPrice.toFixed(2)} / 件` : '--'}</strong>
             </div>
             {scaleError ? <div className="mt-1 text-[10px] font-bold text-red-600">{labels.scaleFailed}</div> : null}
           </div>

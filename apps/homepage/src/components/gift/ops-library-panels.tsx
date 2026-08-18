@@ -20,6 +20,7 @@ export type OpsGiftModel = {
 export type OpsPrintRequest = {
   id: number; request_no: string; title: string; requester_name: string; request_type: string; quantity: number;
   request_status: string; requested_completion_date: string | null; finish_type: string; created_at: string;
+  estimated_unit_price: number | null; estimated_total_price: number | null;
 };
 
 type Category = { id: number; slug: string; nameZh: string; nameEn: string | null; descriptionZh: string | null; sortOrder: number; status: string; modelCount: number };
@@ -30,6 +31,7 @@ type RequestDetail = {
     requestedCompletionDate: string | null; pickupLocation: string | null; requestNotes: string | null; priority: string; status: string;
     assigneeEmployeeId: number | null; assigneeName: string | null; productionBatchNo: string | null; scheduledStartAt: string | null; scheduledCompleteAt: string | null;
     deliveryMethod: string | null; deliveryRecipient: string | null; deliveryNotes: string | null; createdAt: string;
+    estimatedUnitPrice: number | null; estimatedTotalPrice: number | null;
   };
   events: { id: number; type: string; fromStatus: string | null; toStatus: string | null; comment: string | null; actorName: string; createdAt: string }[];
   attachments: { id: number; assetId: number; role: string; filename: string; size: number | null; visibleToRequester: boolean; uploaderName: string | null; createdAt: string }[];
