@@ -311,6 +311,9 @@ type GiftModel = {
   generatedModelUrl?: string;
   generatedModelAssetId?: number;
   draftRequestId?: number;
+  orderFinishType?: 'white' | 'paint' | 'bronze' | 'other';
+  orderPaintColor?: string | null;
+  orderFinishLabel?: string;
 };
 
 function featuredGiftModels(language: GiftLanguage): GiftModel[] {
@@ -815,8 +818,12 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
   const [notes, setNotes] = useState('');
   const [customerCompany, setCustomerCompany] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [finishType, setFinishType] = useState<'white' | 'paint' | 'bronze'>(model.finish === 'bronze' ? 'bronze' : 'paint');
-  const [paintColor, setPaintColor] = useState('#0B77B7');
+  const finishType = model.orderFinishType || (model.finish === 'bronze' ? 'bronze' : 'paint');
+  const paintColor = finishType === 'paint' ? model.orderPaintColor || '#0B77B7' : null;
+  const finishDisplay = model.orderFinishLabel
+    || (finishType === 'bronze' ? '铜做旧' : finishType === 'other' ? '透明件' : finishType === 'white' ? '白膜' : '单色喷漆');
+  const finishTypeDisplay = finishType === 'bronze' ? '铜做旧' : finishType === 'other' ? '透明件' : finishType === 'white' ? '白膜' : '单色喷漆';
+  const displayColor = paintColor || (finishType === 'bronze' ? '#9A5A27' : finishType === 'other' ? '#BFEAF5' : '#FFFFFF');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [requestNo, setRequestNo] = useState('');
@@ -829,7 +836,7 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
       const requestPayload = {
         requestType, modelId: typeof model.id === 'number' ? model.id : null, title: model.name,
         customerCompany, businessScene: model.useCase, quantity, finishType,
-        paintColor: finishType === 'paint' ? paintColor : null, requestedCompletionDate: deadline || null,
+        paintColor, requestedCompletionDate: deadline || null,
         pickupLocation: t.pickupValue, requestNotes: notes,
         specifications: { source: requestType, generatedModelAssetId: model.generatedModelAssetId || null, sourceModelUrl: model.modelUrl || model.generatedModelUrl || null },
         quoteMeasurement,
@@ -879,8 +886,11 @@ function OrderModal({ model, t, onClose, onSubmitted }: { model: GiftModel; t: G
             <p className="rounded-md border border-cyan-100 bg-cyan-50 px-4 py-3 text-xs font-bold leading-5 text-cyan-900">{t.orderModalHint}</p>
             <label className="block text-sm font-black text-slate-700">{t.quantity}<input type="number" min="1" max="10000" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
             <label className="block text-sm font-black text-slate-700">客户或业务项目<input value={customerCompany} onChange={(event) => setCustomerCompany(event.target.value)} maxLength={255} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-medium outline-none focus:border-cyan-500" placeholder="选填，便于运营人员识别用途" /></label>
-            <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-black text-slate-700">成品工艺<select value={finishType} onChange={(event) => setFinishType(event.target.value as 'white' | 'paint' | 'bronze')} className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"><option value="white">白膜</option>{model.finish !== 'bronze' ? <option value="paint">单色喷漆</option> : null}{model.finish !== 'paint' ? <option value="bronze">铜做旧</option> : null}</select></label>{finishType === 'paint' ? <label className="block text-sm font-black text-slate-700">喷漆颜色<div className="mt-2 flex h-11 items-center gap-3 rounded-md border border-slate-200 px-3"><input type="color" value={paintColor} onChange={(event) => setPaintColor(event.target.value.toUpperCase())} /><span className="font-mono text-xs">{paintColor}</span></div></label> : <label className="block text-sm font-black text-slate-700">期望完成日期<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label>}</div>
-            {finishType === 'paint' ? <label className="block text-sm font-black text-slate-700">期望完成日期<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label> : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="block text-sm font-black text-slate-700">成品工艺<div aria-readonly="true" className="mt-2 flex h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-800">{finishTypeDisplay}</div></div>
+              <div className="block text-sm font-black text-slate-700">{finishType === 'paint' ? '喷漆颜色' : '表面效果'}<div aria-readonly="true" className="mt-2 flex h-11 items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3"><span className="h-6 w-9 shrink-0 rounded-full border-2 border-white shadow ring-1 ring-slate-200" style={{ backgroundColor: displayColor }} /><span className="min-w-0 truncate text-sm font-bold text-slate-800">{finishDisplay}</span>{paintColor ? <span className="ml-auto shrink-0 font-mono text-xs font-bold text-slate-500">{paintColor}</span> : null}</div></div>
+            </div>
+            <label className="block text-sm font-black text-slate-700">期望完成日期<input type="date" value={deadline} onChange={(event) => setDeadline(event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 text-sm" /></label>
             <div className="rounded-md border border-slate-200 px-4 py-3"><div className="text-xs font-black text-slate-500">{t.pickup}</div><div className="mt-1 text-sm font-bold text-slate-900">{t.pickupValue}</div></div>
             <label className="block text-sm font-black text-slate-700">{t.note}<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={5000} placeholder={t.notePlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
             {error ? <p className="rounded-md bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p> : null}
@@ -2065,7 +2075,12 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
   }
 
-  const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === (mode === 'image' ? imageSurfaceEffect : surfaceEffect));
+  const selectedSurfaceEffect = mode === 'image' ? imageSurfaceEffect : surfaceEffect;
+  const selectedSurfacePreset = surfaceEffectPresets.find((item) => item.id === selectedSurfaceEffect);
+  const selectedSurfaceColor = selectedSurfaceEffect === 'custom' ? paintColor : selectedSurfacePreset?.hex || paintColor;
+  const selectedProductionFinish = selectedSurfaceEffect
+    ? surfaceEffectBackend(selectedSurfaceEffect, selectedSurfaceColor)
+    : { finishType: finish === 'bronze' ? 'bronze' as const : 'paint' as const, paintColor: finish === 'paint' ? paintColor : null };
   const surfaceSelectionEnabled = brief.trim().length > 0;
   const generatedModel: GiftModel = {
     id: 'ai-generated',
@@ -2078,6 +2093,9 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     finish,
     color: finish === 'paint' ? 'from-[#075985] to-[#67e8f9]' : 'from-[#6b3518] to-[#d6a15f]',
     accent: 'AI',
+    orderFinishType: selectedProductionFinish.finishType,
+    orderPaintColor: selectedProductionFinish.paintColor,
+    orderFinishLabel: selectedSurfacePreset ? labels[selectedSurfacePreset.label] : labels.surfaceCustom,
   };
 
   const displayedImageSource = imageView === 'paint'
