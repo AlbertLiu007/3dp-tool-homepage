@@ -516,11 +516,62 @@ async function normalizedImageBuffer(buffer: Buffer, model: string, options: Ima
         quality = await inspectGiftImageQuality(png);
       } catch (error) {
         if (!(error instanceof ImageQualityRejectedError)) throw error;
-        const isolated = await createTransparentPng(buffer, MAX_IMAGE_BYTES, { preserveExistingAlpha: true });
-        const corrected = await createWhiteMattePng(isolated, MAX_IMAGE_BYTES);
-        quality = await inspectGiftImageQuality(corrected);
-        png = corrected;
-        whiteBackgroundProcessor = 'sharp-adaptive-cutout-white-v2';
+        const boundaryFailure = /boundary/i.test(error.message);
+        if (boundaryFailure) {
+          // A provider can return a complete, otherwise valid object with only
+          // a few pixels of safety margin. Preserve every generated detail and
+          // reframe the whole image locally instead of re-segmenting it, which
+          // may erase pale metallic highlights or thin connected parts.
+          const metadata = await sharp(png).metadata();
+          const width = metadata.width;
+          const height = metadata.height;
+          if (!width || !height) throw error;
+          const insetWidth = Math.max(1, Math.floor(width * 0.9));
+          const insetHeight = Math.max(1, Math.floor(height * 0.9));
+          const inset = await sharp(png)
+            .resize(insetWidth, insetHeight, { fit: 'fill' })
+            .png()
+            .toBuffer();
+          const reframed = await sharp({
+            create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+          }).composite([{
+            input: inset,
+            left: Math.floor((width - insetWidth) / 2),
+            top: Math.floor((height - insetHeight) / 2),
+          }]).png().toBuffer();
+          quality = await inspectGiftImageQuality(reframed);
+          png = reframed;
+          whiteBackgroundProcessor = 'sharp-white-safe-margin-v1';
+        } else {
+          const isolated = await createTransparentPng(buffer, MAX_IMAGE_BYTES, { preserveExistingAlpha: true });
+          let corrected = await createWhiteMattePng(isolated, MAX_IMAGE_BYTES);
+          let correctedReframed = false;
+          try {
+            quality = await inspectGiftImageQuality(corrected);
+          } catch (correctedError) {
+            if (!(correctedError instanceof ImageQualityRejectedError) || !/boundary/i.test(correctedError.message)) throw correctedError;
+            const metadata = await sharp(corrected).metadata();
+            const width = metadata.width;
+            const height = metadata.height;
+            if (!width || !height) throw correctedError;
+            const insetWidth = Math.max(1, Math.floor(width * 0.9));
+            const insetHeight = Math.max(1, Math.floor(height * 0.9));
+            const inset = await sharp(corrected).resize(insetWidth, insetHeight, { fit: 'fill' }).png().toBuffer();
+            corrected = await sharp({
+              create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
+            }).composite([{
+              input: inset,
+              left: Math.floor((width - insetWidth) / 2),
+              top: Math.floor((height - insetHeight) / 2),
+            }]).png().toBuffer();
+            quality = await inspectGiftImageQuality(corrected);
+            correctedReframed = true;
+          }
+          png = corrected;
+          whiteBackgroundProcessor = correctedReframed
+            ? 'sharp-adaptive-cutout-white-safe-margin-v3'
+            : 'sharp-adaptive-cutout-white-v3';
+        }
       }
     }
     return {

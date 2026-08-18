@@ -33,6 +33,14 @@ async function main() {
     { input: await sharp({ create: { width: 180, height: 360, channels: 3, background: '#7A4B31' } }).png().toBuffer(), left: 0, top: 76 },
   ]).png().toBuffer();
   await assert.rejects(() => inspectGiftImageQuality(touchingEdge), /(boundary|background)/i);
+
+  const inset = await sharp(touchingEdge).resize(460, 460, { fit: 'fill' }).png().toBuffer();
+  const safelyReframed = await sharp({
+    create: { width: 512, height: 512, channels: 3, background: '#FFFFFF' },
+  }).composite([{ input: inset, left: 26, top: 26 }]).png().toBuffer();
+  const reframedMetrics = await inspectGiftImageQuality(safelyReframed);
+  assert.equal(reframedMetrics.borderWhiteRatio, 1);
+  assert.equal(reframedMetrics.edgeForegroundRatio, 0);
   console.log('Gift image quality regression checks passed.', metrics);
 }
 
