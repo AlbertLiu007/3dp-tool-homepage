@@ -45,21 +45,41 @@ async function getMetadataToken() {
 async function getEcsRoleCredential() {
   const cached = globalThis.unionamGiftOssCredential;
   if (cached && cached.expiresAt > Date.now() + 5 * 60_000) return cached;
-  const roleName = process.env.GIFT_OSS_ECS_ROLE?.trim() || 'UnionAMLiantaiGiftEcsRole';
   const token = await getMetadataToken();
-  const response = await fetch(`http://100.100.100.200/latest/meta-data/ram/security-credentials/${encodeURIComponent(roleName)}`, {
+  const metadataHeaders = { 'X-aliyun-ecs-metadata-token': token };
+  const configuredRole = process.env.GIFT_OSS_ECS_ROLE?.trim();
+  const roleListResponse = await fetch('http://100.100.100.200/latest/meta-data/ram/security-credentials/', {
     cache: 'no-store',
-    headers: { 'X-aliyun-ecs-metadata-token': token },
+    headers: metadataHeaders,
     signal: AbortSignal.timeout(3000),
   });
-  if (!response.ok) throw new GiftAccessError('Unable to obtain the ECS RAM role credential.', 503, 'configuration');
-  const credential = await response.json() as EcsRoleCredential;
-  if (credential.Code !== 'Success' || !credential.AccessKeyId || !credential.AccessKeySecret || !credential.SecurityToken || !credential.Expiration) {
-    throw new GiftAccessError('The ECS RAM role credential is invalid.', 503, 'configuration');
+  if (!roleListResponse.ok) throw new GiftAccessError('Unable to discover the ECS RAM role.', 503, 'configuration');
+  const discoveredRoles = (await roleListResponse.text())
+    .split(/\r?\n/)
+    .map((role) => role.trim())
+    .filter(Boolean);
+  const roleNames = [...new Set([...(configuredRole ? [configuredRole] : []), ...discoveredRoles])];
+  if (!roleNames.length) throw new GiftAccessError('No ECS RAM role is attached to this server.', 503, 'configuration');
+
+  for (const roleName of roleNames) {
+    const response = await fetch(`http://100.100.100.200/latest/meta-data/ram/security-credentials/${encodeURIComponent(roleName)}`, {
+      cache: 'no-store',
+      headers: metadataHeaders,
+      signal: AbortSignal.timeout(3000),
+    });
+    // A stale configured role is harmless: continue with the role currently
+    // attached to the ECS instance instead of taking the whole gift service down.
+    if (response.status === 404) continue;
+    if (!response.ok) throw new GiftAccessError('Unable to obtain the ECS RAM role credential.', 503, 'configuration');
+    const credential = await response.json() as EcsRoleCredential;
+    if (credential.Code !== 'Success' || !credential.AccessKeyId || !credential.AccessKeySecret || !credential.SecurityToken || !credential.Expiration) {
+      throw new GiftAccessError('The ECS RAM role credential is invalid.', 503, 'configuration');
+    }
+    const result = { ...credential, expiresAt: new Date(credential.Expiration).getTime() };
+    globalThis.unionamGiftOssCredential = result;
+    return result;
   }
-  const result = { ...credential, expiresAt: new Date(credential.Expiration).getTime() };
-  globalThis.unionamGiftOssCredential = result;
-  return result;
+  throw new GiftAccessError('Unable to obtain the ECS RAM role credential.', 503, 'configuration');
 }
 
 async function ossClient(options: { internal?: boolean } = {}) {
