@@ -377,6 +377,8 @@ const studioCopy = {
     finish: '推荐工艺',
     noResult: '没有找到匹配的礼品，可尝试调整筛选或使用 AI 定制。',
     aiTitle: '没有合适的？用 AI 定制客户专属礼品',
+    aiFilingTitle: 'AI 生成服务备案中',
+    aiFilingDescription: '待备案通过再次开放相关生成式服务。礼品库与普通打印申请仍可正常使用。',
     aiDescription: '选择一种创作方式。所有 3D 模型统一生成白膜，单色喷漆或铜做旧只用于效果预览和后续工艺。',
     imageMode: '上传图片生成 3D 模型',
     imageModeHint: '适合已有清晰物体、人物或礼品参考图',
@@ -499,6 +501,8 @@ const studioCopy = {
     finish: 'Recommended finish',
     noResult: 'No matching gift. Adjust the filters or create a custom design with AI.',
     aiTitle: 'Nothing fits? Create a customer-specific gift with AI',
+    aiFilingTitle: 'AI generation service filing in progress',
+    aiFilingDescription: 'Generative services will reopen after the filing is approved. The gift library and standard print requests remain available.',
     aiDescription: 'Choose a creation path. Every 3D model is generated as a white base; paint and antique bronze apply only to visual preview and finishing.',
     imageMode: 'Image to 3D model',
     imageModeHint: 'Best for a clear object, person, or gift reference image',
@@ -2672,6 +2676,25 @@ function AiAccessNotice({ employee, t, onUpdated }: { employee: GiftEmployee; t:
   );
 }
 
+function AiFilingNotice({ language }: { language: GiftLanguage }) {
+  const labels = studioCopy[language];
+  return (
+    <section id="ai-generate" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8">
+        <div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div>
+        <h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2>
+      </div>
+      <div className="grid min-h-56 place-items-center px-6 py-10 text-center md:px-8">
+        <div className="max-w-2xl">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-amber-700"><Clock3 className="h-6 w-6" /></div>
+          <h3 className="mt-5 text-xl font-black text-slate-950">{labels.aiFilingTitle}</h3>
+          <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{labels.aiFilingDescription}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: { language: GiftLanguage; t: GiftCopy; employee: GiftEmployee; onLogout: () => void; onEmployeeUpdated: (employee: GiftEmployee) => void }) {
   const [selectedModel, setSelectedModel] = useState<GiftModel | null>(null);
   const [catalogPreviewModel, setCatalogPreviewModel] = useState<GeneratedGiftModel | null>(null);
@@ -2688,6 +2711,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
   const labels = studioCopy[language];
+  const aiServiceAvailable = process.env.NODE_ENV !== 'production' || employee.name.trim() === '刘子朔';
 
   useEffect(() => {
     let active = true;
@@ -2740,7 +2764,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
         <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-5">
           <div>
             <div className="inline-flex items-center gap-2 text-xs font-black text-cyan-700"><BadgeCheck className="h-4 w-4" />{labels.eyebrow}</div>
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employee.name}</span><span className="text-xs text-slate-300">·</span><a href="#my-requests" onClick={(event) => { event.preventDefault(); setMyRequestsExpanded(true); window.history.replaceState(null, '', '#my-requests'); window.setTimeout(() => document.getElementById('my-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }} className="text-xs font-medium text-[#0b4f9c]">{labels.orders}</a>{employee.approvalStatus === 'approved' ? <><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{t.quotaToday}：{employee.quota.renderUsed}/{employee.quota.renderDailyLimit} · 3D {employee.quota.modelUsed}/{employee.quota.modelDailyLimit}</span></> : null}</div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-sm font-bold text-slate-500">{t.hello}{language === 'zh' ? '，' : ', '}{employee.name}</span><span className="text-xs text-slate-300">·</span><a href="#my-requests" onClick={(event) => { event.preventDefault(); setMyRequestsExpanded(true); window.history.replaceState(null, '', '#my-requests'); window.setTimeout(() => document.getElementById('my-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); }} className="text-xs font-medium text-[#0b4f9c]">{labels.orders}</a>{aiServiceAvailable && employee.approvalStatus === 'approved' ? <><span className="text-xs text-slate-300">·</span><span className="text-xs font-medium text-slate-500">{t.quotaToday}：{employee.quota.renderUsed}/{employee.quota.renderDailyLimit} · 3D {employee.quota.modelUsed}/{employee.quota.modelDailyLimit}</span></> : null}</div>
           </div>
           <div className="flex items-center gap-2">
             {employee.role === 'admin' ? <Link href={process.env.NODE_ENV === 'production' ? 'https://ops.unionam.com' : '/ops'} className="inline-flex h-9 items-center gap-2 rounded-md border border-cyan-200 px-3 text-xs font-bold text-[#0b4f9c] transition hover:border-cyan-300 hover:bg-cyan-50" data-umami-event="gift_admin_portal_click"><ShieldCheck className="h-4 w-4" />{t.adminPortal}<ChevronRight className="h-4 w-4" /></Link> : null}
@@ -2774,7 +2798,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
 
       <MyRequestsPanel language={language} refreshKey={requestRefreshKey} expanded={myRequestsExpanded} onExpandedChange={setMyRequestsExpanded} onPreviewModel={setRequestPreviewModel} onPreviewImage={setRequestPreviewImage} onResume={resumeDraft} />
 
-      <section className="mx-auto max-w-[1480px] px-5 py-4">{employee.approvalStatus === 'approved' ? <AiGiftStudio language={language} onOrder={setSelectedModel} onDraftUpdated={() => setRequestRefreshKey((value) => value + 1)} resumeDraft={draftResume} onResumeConsumed={() => setDraftResume(null)} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />}</section>
+      <section className="mx-auto max-w-[1480px] px-5 py-4">{aiServiceAvailable ? (employee.approvalStatus === 'approved' ? <AiGiftStudio language={language} onOrder={setSelectedModel} onDraftUpdated={() => setRequestRefreshKey((value) => value + 1)} resumeDraft={draftResume} onResumeConsumed={() => setDraftResume(null)} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />) : <AiFilingNotice language={language} />}</section>
 
       <section className="mx-auto max-w-[1480px] px-5 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

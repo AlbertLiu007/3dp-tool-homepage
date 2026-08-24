@@ -180,6 +180,10 @@ export function isLocalGiftDevelopmentSession(session: Pick<GiftSession, 'userId
   return process.env.NODE_ENV !== 'production' && session.userId === 'local-development-employee';
 }
 
+export function canUseGiftGenerativeServices(employee: Pick<GiftEmployeeAccess, 'name'>) {
+  return employee.name.trim() === '刘子朔';
+}
+
 function parseStrings(value: unknown) {
   const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
   return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];

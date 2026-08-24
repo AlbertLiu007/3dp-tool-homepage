@@ -3,6 +3,8 @@ import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAiError } from '@/lib/gift-ai';
 import {
   GiftAccessError,
+  canUseGiftGenerativeServices,
+  isLocalGiftDevelopmentSession,
   requireGiftEmployeeAccess,
   reserveGiftAiUsage,
   settleGiftAiUsage,
@@ -12,7 +14,10 @@ import {
 export async function requireGiftEmployee(options: { approved?: boolean } = {}) {
   const session = getGiftSession();
   if (!session) throw new GiftAiError('Authentication required.', 401, 'authentication');
-  await requireGiftEmployeeAccess(session, { approved: options.approved });
+  const employee = await requireGiftEmployeeAccess(session, { approved: options.approved });
+  if (!isLocalGiftDevelopmentSession(session) && !canUseGiftGenerativeServices(employee)) {
+    throw new GiftAiError('AI 生成服务备案中，待备案通过再次开放相关生成式服务。', 403, 'approval');
+  }
   return session;
 }
 
