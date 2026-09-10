@@ -226,6 +226,10 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500">
           <span>© UnionAM</span>
           <span className="text-slate-300">|</span>
+          <a href="/privacy" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">
+            {language === 'zh' ? '隐私政策' : 'Privacy Policy'}
+          </a>
+          <span className="text-slate-300">|</span>
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">
             沪ICP备17023219号-18
           </a>

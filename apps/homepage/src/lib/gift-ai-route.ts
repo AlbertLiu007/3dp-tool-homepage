@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAiError } from '@/lib/gift-ai';
+import { hasGiftAiScenarioConsent, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
 import {
   GiftAccessError,
   canUseGiftGenerativeServices,
@@ -23,6 +24,12 @@ export async function requireGiftEmployee(options: { approved?: boolean } = {}) 
 
 export function giftAiIdempotencyKey(request: Request) {
   return request.headers.get('Idempotency-Key')?.trim() || undefined;
+}
+
+export function requireGiftAiScenarioConsent(request: Request, provider: GiftAiConsentProvider) {
+  if (!hasGiftAiScenarioConsent(request.headers, provider)) {
+    throw new GiftAiError('This AI operation requires a separate, provider-specific consent.', 400, 'validation');
+  }
 }
 
 export async function withGiftAiUsage<T>(session: Awaited<ReturnType<typeof requireGiftEmployee>>, usageType: GiftAiUsageType, operation: (reservation: { requestId: string }) => Promise<T>, requestId?: string, metadata?: { provider?: string; model?: string }) {

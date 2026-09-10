@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { configuredImageEditModel, configuredImageEditProvider, editGiftImage, GiftAiError } from '@/lib/gift-ai';
-import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
+import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent, requireGiftEmployee, validateImageFile, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, findGiftDraftImageByTransformationCacheKey, persistGiftDraftFileAsset, persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
@@ -36,6 +36,7 @@ async function transformationCacheKey(input: {
 export async function POST(request: Request) {
   try {
     const session = await requireGiftEmployee({ approved: true });
+    requireGiftAiScenarioConsent(request, 'apimart');
     const formData = await request.formData();
     const image = validateImageFile(formData.get('image'), 10 * 1024 * 1024);
     const maskEntry = formData.get('mask');

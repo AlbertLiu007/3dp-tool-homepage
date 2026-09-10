@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { configuredImageGenerationModel, configuredImageGenerationProvider, generateGiftImages, GiftAiError, publicGiftImageError } from '@/lib/gift-ai';
-import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
+import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent, requireGiftEmployee, withGiftAiUsage } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
@@ -29,6 +29,7 @@ function streamResponse(run: (send: (message: unknown) => void) => Promise<void>
 export async function POST(request: Request) {
   try {
     const session = await requireGiftEmployee({ approved: true });
+    requireGiftAiScenarioConsent(request, 'apimart');
     const body = await request.json() as Record<string, unknown>;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Prompt must contain 1 to 4000 characters.', 400, 'validation');

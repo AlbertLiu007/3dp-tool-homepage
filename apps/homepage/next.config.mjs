@@ -3,6 +3,15 @@ const nextConfig = {
   reactStrictMode: true,
   distDir: process.env.NEXT_DIST_DIR ?? '.next',
   transpilePackages: ['@unionam/shared-ui', '@unionam/shared-i18n'],
+  async redirects() {
+    return [
+      {
+        source: '/privacy',
+        destination: '/crm/privacy',
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

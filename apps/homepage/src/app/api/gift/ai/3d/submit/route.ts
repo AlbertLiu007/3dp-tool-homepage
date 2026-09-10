@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GiftAiError, submitWhiteModel, TRIPO_3D_MODEL } from '@/lib/gift-ai';
-import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftEmployee, validateImageFile } from '@/lib/gift-ai-route';
+import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent, requireGiftEmployee, validateImageFile } from '@/lib/gift-ai-route';
 import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, persistGiftDraftFileAsset } from '@/lib/gift-oss';
@@ -11,6 +11,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const session = await requireGiftEmployee({ approved: true });
+    requireGiftAiScenarioConsent(request, 'tripo');
     const formData = await request.formData();
     const image = validateImageFile(formData.get('image'), 5 * 1024 * 1024);
     if (isLocalGiftDevelopmentSession(session)) {

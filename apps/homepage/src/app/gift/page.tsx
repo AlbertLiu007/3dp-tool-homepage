@@ -49,7 +49,9 @@ import { createPortal } from 'react-dom';
 import { ToolHeader } from '@unionam/shared-ui';
 import { WeComQrLogin } from '@/components/gift/wecom-qr-login';
 import { GiftModelModal, readGiftModelQuoteMeasurement, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
+import { GIFT_AI_CONSENT_HEADER, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
 import { useLanguage } from '@/lib/i18n/use-language';
+import { acceptUnionAmPrivacyPolicy, readUnionAmPrivacyPolicyAcceptance } from '@/lib/privacy';
 
 type GiftLanguage = 'zh' | 'en';
 
@@ -620,6 +622,8 @@ function LoginGate({
   loginPending,
   errorCode,
   inWeCom,
+  privacyAccepted,
+  onPrivacyAccepted,
 }: {
   t: GiftCopy;
   language: GiftLanguage;
@@ -629,6 +633,8 @@ function LoginGate({
   loginPending: boolean;
   errorCode: string | null;
   inWeCom: boolean;
+  privacyAccepted: boolean;
+  onPrivacyAccepted: () => void;
 }) {
   const errorMessage = errorCode === 'configuration'
     ? t.authConfigError
@@ -673,13 +679,28 @@ function LoginGate({
             <p className="mt-6 text-sm font-medium leading-6 text-slate-500">{t.loginDescription}</p>
 
             {errorMessage ? <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700">{errorMessage}</div> : null}
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs font-medium leading-5 text-slate-600">
+              <input
+                type="checkbox"
+                checked={privacyAccepted}
+                onChange={(event) => { if (event.target.checked) onPrivacyAccepted(); }}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#0b4f9c]"
+              />
+              <span>
+                {language === 'zh' ? '我已阅读并同意 ' : 'I have read and agree to the '}
+                <a href="/privacy" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="font-black text-[#0b4f9c] underline underline-offset-2">
+                  {language === 'zh' ? 'UnionAM 隐私政策' : 'UnionAM Privacy Policy'}
+                </a>
+                {language === 'zh' ? '。确认后才会加载企业微信登录组件。' : '. The WeCom login component loads only after confirmation.'}
+              </span>
+            </label>
             {showDevLogin ? (
               <div className="mt-4 rounded-lg border border-cyan-200 bg-cyan-50 p-3">
                 <p className="text-xs font-medium leading-5 text-cyan-900">{t.localHint}</p>
                 <button
                   type="button"
                   onClick={onDevLogin}
-                  disabled={loginPending}
+                  disabled={loginPending || !privacyAccepted}
                   className="mt-2 inline-flex w-full items-center justify-center rounded-md bg-[#0b4f9c] px-4 py-2.5 text-xs font-black text-white transition hover:bg-[#083f7e] disabled:cursor-wait disabled:opacity-70"
                   data-umami-event="gift_local_login_click"
                 >
@@ -687,7 +708,7 @@ function LoginGate({
                 </button>
               </div>
             ) : null}
-            {inWeCom ? (
+            {privacyAccepted && inWeCom ? (
               <div className="mt-6 rounded-lg border border-cyan-100 bg-cyan-50/70 p-5 text-center">
                 <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-[#0b4f9c] shadow-sm"><LoaderCircle className="h-7 w-7 animate-spin" /></div>
                 <h3 className="mt-4 text-sm font-black text-slate-900">{t.wecomAutoTitle}</h3>
@@ -696,7 +717,7 @@ function LoginGate({
                   {loginPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}{t.wecomAutoButton}
                 </button>
               </div>
-            ) : (
+            ) : privacyAccepted ? (
               <WeComQrLogin
                 language={language}
                 loginPending={loginPending}
@@ -714,12 +735,51 @@ function LoginGate({
                   mobileHint: t.mobileLoginHint,
                 }}
               />
-            )}
+            ) : null}
           </div>
         </div>
       </div>
     </section>
   );
+}
+
+function AiScenarioConsentModal({ provider, language, onCancel, onConfirm }: { provider: GiftAiConsentProvider; language: GiftLanguage; onCancel: () => void; onConfirm: () => void }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const isApimart = provider === 'apimart';
+  const content = language === 'zh'
+    ? {
+      title: isApimart ? 'AI 图片生成与编辑场景告知' : '图片生成 3D 模型场景告知',
+      provider: isApimart ? '杭州唤智网络科技有限公司（APIMart）及其模型服务方' : 'Holymolly Ltd（Tripo AI）',
+      purpose: isApimart ? '根据提示词和参考图片生成或编辑礼品效果图' : '根据所选礼品图片生成可下载的 3D 模型',
+      data: isApimart ? '本次输入的提示词、参考图片、局部编辑蒙版和生成参数' : '本次选择的礼品图片、生成参数及任务标识',
+      method: isApimart ? '由 UnionAM 服务端调用 APIMart API；不发送 CRM 联系人或账号凭证' : '由 UnionAM 服务端调用 Tripo API；不发送 CRM 联系人或账号凭证',
+      transfer: isApimart ? '相关数据可能由 APIMart 转交境外模型服务方处理。' : '相关数据将发送至境外 Tripo AI 服务处理。',
+      checkbox: `我已阅读本场景告知，并单独同意将上述本次数据发送给${isApimart ? ' APIMart 及其模型服务方' : ' Tripo AI'}处理。`,
+      cancel: '取消',
+      confirm: '同意并继续本次操作',
+    }
+    : {
+      title: isApimart ? 'AI image generation and editing notice' : 'Image-to-3D processing notice',
+      provider: isApimart ? 'Hangzhou Huanzhi Network Technology Co., Ltd. (APIMart) and its model providers' : 'Holymolly Ltd (Tripo AI)',
+      purpose: isApimart ? 'Generate or edit gift renders from prompts and reference images' : 'Generate a downloadable 3D model from the selected gift image',
+      data: isApimart ? 'Prompts, reference images, optional edit masks, and generation parameters for this request' : 'The selected gift image, generation parameters, and task identifier',
+      method: `UnionAM's server calls the ${isApimart ? 'APIMart' : 'Tripo'} API; CRM contacts and account credentials are not sent`,
+      transfer: isApimart ? 'APIMart may transfer this data to overseas model providers for processing.' : 'This data will be sent to the overseas Tripo AI service for processing.',
+      checkbox: `I have read this notice and separately consent to sending this request's data to ${isApimart ? 'APIMart and its model providers' : 'Tripo AI'} for processing.`,
+      cancel: 'Cancel',
+      confirm: 'Agree and continue once',
+    };
+
+  return <GiftModalPortal><div className="fixed inset-0 z-[10000] grid place-items-center bg-slate-950/70 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+    <div role="dialog" aria-modal="true" aria-labelledby="gift-ai-consent-title" className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl md:p-7">
+      <div className="flex items-start justify-between gap-4"><div><div className="inline-flex items-center gap-2 rounded-md bg-blue-50 px-2.5 py-1.5 text-xs font-black text-[#0b4f9c]"><ShieldCheck className="h-4 w-4" />{language === 'zh' ? '本次操作单独确认' : 'Separate consent for this operation'}</div><h2 id="gift-ai-consent-title" className="mt-3 text-xl font-black text-slate-950">{content.title}</h2></div><button type="button" onClick={onCancel} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200" aria-label={content.cancel}><X className="h-5 w-5" /></button></div>
+      <dl className="mt-5 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5"><div><dt className="font-black text-slate-800">{language === 'zh' ? '接收方' : 'Recipient'}</dt><dd className="mt-0.5 font-medium text-slate-600">{content.provider}</dd></div><div><dt className="font-black text-slate-800">{language === 'zh' ? '处理目的' : 'Purpose'}</dt><dd className="mt-0.5 font-medium text-slate-600">{content.purpose}</dd></div><div><dt className="font-black text-slate-800">{language === 'zh' ? '发送的信息' : 'Data sent'}</dt><dd className="mt-0.5 font-medium text-slate-600">{content.data}</dd></div><div><dt className="font-black text-slate-800">{language === 'zh' ? '处理方式' : 'Method'}</dt><dd className="mt-0.5 font-medium text-slate-600">{content.method}</dd></div><div><dt className="font-black text-slate-800">{language === 'zh' ? '跨境处理' : 'Cross-border processing'}</dt><dd className="mt-0.5 font-medium text-slate-600">{content.transfer}</dd></div></dl>
+      <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-900">{language === 'zh' ? '请勿上传无权使用的资料、商业秘密或敏感个人信息；如确需处理敏感个人信息，应另行履行相应告知和单独同意程序。' : 'Do not upload unauthorized materials, trade secrets, or sensitive personal information. Any necessary sensitive-personal-information processing requires its own notice and separate consent.'}</p>
+      <p className="mt-3 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '本确认仅适用于本次操作，独立于 UnionAM 隐私政策的总体确认。' : 'This confirmation applies only to this operation and is independent of general acceptance of the UnionAM Privacy Policy.'} <a href="/privacy" target="_blank" rel="noreferrer" className="font-black text-[#0b4f9c] underline underline-offset-2">{language === 'zh' ? '查看隐私政策' : 'View Privacy Policy'}</a></p>
+      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 text-xs font-bold leading-5 text-slate-700"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#0b4f9c]" /><span>{content.checkbox}</span></label>
+      <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onCancel} className="h-11 rounded-md border border-slate-200 bg-white px-5 text-sm font-black text-slate-600 hover:bg-slate-50">{content.cancel}</button><button type="button" onClick={onConfirm} disabled={!confirmed} className="h-11 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-40">{content.confirm}</button></div>
+    </div>
+  </div></GiftModalPortal>;
 }
 
 function GiftModelVisual({ model, onPreview }: { model: GiftModel; onPreview?: () => void }) {
@@ -1361,10 +1421,32 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const [previewRender, setPreviewRender] = useState<{ url: string; index: number } | null>(null);
   const [previewDetailImage, setPreviewDetailImage] = useState<{ url: string; title: string } | null>(null);
   const [aiError, setAiError] = useState<GiftAiClientError | null>(null);
+  const [aiConsentProvider, setAiConsentProvider] = useState<GiftAiConsentProvider | null>(null);
+  const aiConsentResolverRef = useRef<((accepted: boolean) => void) | null>(null);
   const [pendingResumeModel, setPendingResumeModel] = useState(false);
   const [pendingResumeBriefModel, setPendingResumeBriefModel] = useState(false);
   const notifiedDraftIdsRef = useRef(new Set<number>());
   const selectedProfileTags = profileLabels(language, profileSelections);
+
+  function requestAiScenarioConsent(provider: GiftAiConsentProvider) {
+    aiConsentResolverRef.current?.(false);
+    return new Promise<boolean>((resolve) => {
+      aiConsentResolverRef.current = resolve;
+      setAiConsentProvider(provider);
+    });
+  }
+
+  function resolveAiScenarioConsent(accepted: boolean) {
+    const resolve = aiConsentResolverRef.current;
+    aiConsentResolverRef.current = null;
+    setAiConsentProvider(null);
+    resolve?.(accepted);
+  }
+
+  useEffect(() => () => {
+    aiConsentResolverRef.current?.(false);
+    aiConsentResolverRef.current = null;
+  }, []);
 
   useEffect(() => {
     let hasNewDraft = false;
@@ -1580,7 +1662,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       method: 'POST',
       body: formData,
       credentials: 'same-origin',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'apimart' },
     });
     if (!response.ok) throw await apiErrorMessage(response);
     const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult; sourceAssetId?: number };
@@ -1658,11 +1740,17 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     setModelProgress(null);
     clearAiError();
     if (!file) return;
+    if (!(await requestAiScenarioConsent('apimart'))) {
+      setImagePreparing(false);
+      setImagePreparationNotice(null);
+      return;
+    }
     await prepareImageForModel(file, preparationId);
   }
 
   async function retryImagePreparation() {
     if (!imageOriginalFile || imagePreparing) return;
+    if (!(await requestAiScenarioConsent('apimart'))) return;
     const preparationId = imagePreparationIdRef.current + 1;
     imagePreparationIdRef.current = preparationId;
     clearAiError();
@@ -1671,6 +1759,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
   async function generateImageSurfacePreview(effect = imageSurfaceEffect, color = paintColor) {
     if ((!imageRenderInputFile && !imageFile) || !effect || imagePreparing || imagePaintGenerating) return;
+    if (!(await requestAiScenarioConsent('apimart'))) return;
     const paintId = imagePaintIdRef.current + 1;
     imagePaintIdRef.current = paintId;
     clearAiError();
@@ -1767,7 +1856,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     if (submittedFinish === 'paint' && submittedPaintColor) formData.set('paintColor', submittedPaintColor);
     if (options.draftRequestId) formData.set('draftRequestId', String(options.draftRequestId));
     if (options.sourceAssetId && !prepared.compressed) formData.set('sourceAssetId', String(options.sourceAssetId));
-    const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
+    const submitResponse = await fetch('/api/gift/ai/3d/submit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'tripo' } });
     if (!submitResponse.ok) {
       const error = await apiErrorMessage(submitResponse);
       if (error.reason === 'validation' && error.message?.includes('5MB')) error.message = labels.imageTooLarge;
@@ -1820,6 +1909,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
   async function generateImageModel() {
     if (!imagePaintPreview || !imageSurfaceEffect) return;
+    if (!(await requestAiScenarioConsent('tripo'))) return;
     clearAiError();
     setImageStatus('generating');
     try {
@@ -1928,6 +2018,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
   async function generateRenders() {
     if ((!brief.trim() && selectedProfileTags.length === 0) || !surfaceEffect) return;
+    if (!(await requestAiScenarioConsent('apimart'))) return;
     clearAiError();
     const startedAt = Date.now();
     setBriefStatus('generating-render');
@@ -1943,7 +2034,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       const response = await fetch('/api/gift/ai/render', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'apimart' },
         body: JSON.stringify({
           stream: true,
           prompt: renderPrompt(language, brief, selectedProfileTags, surfaceEffect, paintColor),
@@ -2014,6 +2105,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
     const source = giftImageSource(selectedImage);
     if (!source || !editPrompt.trim() || !surfaceEffect) return;
+    if (!(await requestAiScenarioConsent('apimart'))) return;
     clearAiError();
     setEditNotice(false);
     setEditError(null);
@@ -2036,7 +2128,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       const finishConstraint = surfaceEffectPrompt(language, surfaceEffect, paintColor);
       formData.set('prompt', `${editPrompt.trim()}\n${finishConstraint}`);
       if (editMask) formData.set('mask', editMask);
-      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID() } });
+      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'apimart' } });
       if (!response.ok) throw await apiErrorMessage(response);
       const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult };
       if (!payload.draft?.id || !payload.image?.assetId || !giftImageSource(payload.image)) throw { configuration: false, message: 'Edited image was not saved to the gift draft.' };
@@ -2059,6 +2151,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
     const source = giftImageSource(selectedImage);
     if (!source) return;
+    if (!(await requestAiScenarioConsent('tripo'))) return;
     clearAiError();
     setBriefStatus('generating-model');
     try {
@@ -2183,6 +2276,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       </div></div>
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
       {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => { setSelectedRender(previewRender.index); setEditNotice(false); }} /> : null}
+      {aiConsentProvider ? <AiScenarioConsentModal key={aiConsentProvider} provider={aiConsentProvider} language={language} onCancel={() => resolveAiScenarioConsent(false)} onConfirm={() => resolveAiScenarioConsent(true)} /> : null}
     </section>
   );
 
@@ -2808,7 +2902,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
         {showBusinessRequest ? <div className="mt-4"><BusinessRequestPanel t={t} onSubmitted={() => setRequestRefreshKey((value) => value + 1)} /></div> : null}
       </section>
 
-      <footer className="mt-5 border-t border-slate-200 bg-white px-5 py-5"><div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500"><span>© UnionAM</span><span className="text-slate-300">|</span><span>{t.allLocal}</span><span className="text-slate-300">|</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪ICP备17023219号-18</a><span className="text-slate-300">|</span><a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪公网安备31011702891863号</a></div></footer>
+      <footer className="mt-5 border-t border-slate-200 bg-white px-5 py-5"><div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500"><span>© UnionAM</span><span className="text-slate-300">|</span><span>{t.allLocal}</span><span className="text-slate-300">|</span><a href="/privacy" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">{language === 'zh' ? '隐私政策' : 'Privacy Policy'}</a><span className="text-slate-300">|</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪ICP备17023219号-18</a><span className="text-slate-300">|</span><a href="https://beian.mps.gov.cn/" target="_blank" rel="noreferrer" className="transition hover:text-[#0b4f9c]">沪公网安备31011702891863号</a></div></footer>
 
       {selectedModel ? <OrderModal model={selectedModel} t={t} onClose={() => setSelectedModel(null)} onSubmitted={() => setRequestRefreshKey((value) => value + 1)} /> : null}
       {catalogPreviewModel ? <GiftModelModal language={language} model={catalogPreviewModel} onClose={() => setCatalogPreviewModel(null)} /> : null}
@@ -2862,6 +2956,7 @@ export default function GiftPage() {
   const [employee, setEmployee] = useState<GiftEmployee | null>(null);
   const [loginPending, setLoginPending] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [inWeCom] = useState(() => typeof navigator !== 'undefined' && /wxwork|wecom/i.test(navigator.userAgent));
   const navItems = [
     { label: headerLabels.navQuote, href: '/quote' },
@@ -2871,6 +2966,8 @@ export default function GiftPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const privacyAcceptedOnDevice = readUnionAmPrivacyPolicyAcceptance();
+    setPrivacyAccepted(privacyAcceptedOnDevice);
     const queryError = new URLSearchParams(window.location.search).get('auth_error');
     if (queryError) setAuthError(queryError);
 
@@ -2884,7 +2981,7 @@ export default function GiftPage() {
           setEmployee(payload.user);
           setAuthStatus('authenticated');
         } else {
-          if (inWeCom && !queryError && !window.sessionStorage.getItem('unionam.wecom.silent-login-attempt')) {
+          if (privacyAcceptedOnDevice && inWeCom && !queryError && !window.sessionStorage.getItem('unionam.wecom.silent-login-attempt')) {
             window.sessionStorage.setItem('unionam.wecom.silent-login-attempt', '1');
             window.location.replace('/api/gift/auth/wecom/silent');
             return;
@@ -2906,6 +3003,7 @@ export default function GiftPage() {
   }, [inWeCom]);
 
   function startWeComLogin() {
+    if (!privacyAccepted) return;
     setLoginPending(true);
     setAuthError(null);
     if (inWeCom) {
@@ -2917,6 +3015,7 @@ export default function GiftPage() {
   }
 
   async function startDevelopmentLogin() {
+    if (!privacyAccepted) return;
     setLoginPending(true);
     setAuthError(null);
 
@@ -2945,6 +3044,11 @@ export default function GiftPage() {
     setAuthStatus('guest');
   }
 
+  function acceptPrivacyPolicy() {
+    acceptUnionAmPrivacyPolicy();
+    setPrivacyAccepted(true);
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
       <ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} />
@@ -2959,6 +3063,8 @@ export default function GiftPage() {
           loginPending={loginPending}
           errorCode={authError}
           inWeCom={inWeCom}
+          privacyAccepted={privacyAccepted}
+          onPrivacyAccepted={acceptPrivacyPolicy}
         />
       ) : null}
       {authStatus === 'authenticated' && employee ? <GiftDashboard language={giftLanguage} t={t} employee={employee} onLogout={logout} onEmployeeUpdated={setEmployee} /> : null}
