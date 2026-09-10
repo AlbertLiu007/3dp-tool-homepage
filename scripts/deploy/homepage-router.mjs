@@ -7,6 +7,10 @@ import { readFileSync } from 'node:fs';
 const listenHost = process.env.ROUTER_HOST || '127.0.0.1';
 const listenPort = Number(process.env.ROUTER_PORT || 3002);
 const targetFile = process.env.ROUTER_TARGET_FILE || '/srv/unionam/deploy/homepage-active-port';
+const privacyTargetPort = Number(process.env.PRIVACY_TARGET_PORT || 3200);
+if (!Number.isInteger(privacyTargetPort) || privacyTargetPort < 1 || privacyTargetPort > 65535) {
+  throw new Error(`Invalid privacy target port: ${privacyTargetPort}`);
+}
 const allowedPorts = new Set(
   (process.env.ROUTER_ALLOWED_PORTS || '3012,3013')
     .split(',')
@@ -18,6 +22,18 @@ function activePort() {
   const port = Number(readFileSync(targetFile, 'utf8').trim());
   if (!allowedPorts.has(port)) throw new Error(`Invalid homepage target port: ${port}`);
   return port;
+}
+
+function requestPath(request) {
+  try {
+    return new URL(request.url || '/', 'http://localhost').pathname.replace(/\/$/, '') || '/';
+  } catch {
+    return '/';
+  }
+}
+
+function upstreamPort(request) {
+  return requestPath(request) === '/privacy' ? privacyTargetPort : activePort();
 }
 
 function respondUnavailable(response, error) {
@@ -36,7 +52,7 @@ const server = http.createServer((request, response) => {
   if (request.url === '/__router_health') {
     try {
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      response.end(JSON.stringify({ status: 'ok', targetPort: activePort() }));
+      response.end(JSON.stringify({ status: 'ok', targetPort: activePort(), privacyTargetPort }));
     } catch (error) {
       respondUnavailable(response, error);
     }
@@ -45,7 +61,7 @@ const server = http.createServer((request, response) => {
 
   let targetPort;
   try {
-    targetPort = activePort();
+    targetPort = upstreamPort(request);
   } catch (error) {
     respondUnavailable(response, error);
     return;
@@ -75,7 +91,7 @@ const server = http.createServer((request, response) => {
 server.on('upgrade', (request, clientSocket, head) => {
   let targetPort;
   try {
-    targetPort = activePort();
+    targetPort = upstreamPort(request);
   } catch {
     clientSocket.destroy();
     return;

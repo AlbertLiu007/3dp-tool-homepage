@@ -104,6 +104,7 @@ export default function HomePage() {
     { label: t.navQuote, href: '/quote' },
     { label: t.navConverter, href: '/converter' },
     { label: t.navGift, href: '/gift', eventName: 'header_gift_click' },
+    { label: t.navCrm, href: '/crm/', eventName: 'header_crm_click' },
   ];
 
   return (
