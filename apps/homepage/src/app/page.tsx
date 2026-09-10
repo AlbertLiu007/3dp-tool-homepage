@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ToolHeader } from '@unionam/shared-ui';
 import { useLanguage } from '@/lib/i18n/use-language';
+import { createToolNavigation } from '@/lib/tool-navigation';
 
 function ToolCard({
   title,
@@ -100,16 +101,11 @@ function SectionHeading({ title, description }: { title: string; description?: s
 
 export default function HomePage() {
   const { language, setLanguage, t } = useLanguage();
-  const navItems = [
-    { label: t.navQuote, href: '/quote' },
-    { label: t.navConverter, href: '/converter' },
-    { label: t.navGift, href: '/gift', eventName: 'header_gift_click' },
-    { label: t.navCrm, href: '/crm/', eventName: 'header_crm_click' },
-  ];
+  const navItems = createToolNavigation(t);
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
-      <ToolHeader language={language} labels={t} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} />
+      <ToolHeader language={language} labels={t} logoSrc="/brand/unionam-logo.png" homeHref="/" navItems={navItems} onLanguageChange={setLanguage} />
 
       <section className="mx-auto max-w-[1480px] px-5 py-5">
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

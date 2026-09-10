@@ -52,6 +52,7 @@ import { GiftModelModal, readGiftModelQuoteMeasurement, type GeneratedGiftModel 
 import { GIFT_AI_CONSENT_HEADER, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
 import { useLanguage } from '@/lib/i18n/use-language';
 import { acceptUnionAmPrivacyPolicy, readUnionAmPrivacyPolicyAcceptance } from '@/lib/privacy';
+import { createToolNavigation } from '@/lib/tool-navigation';
 
 type GiftLanguage = 'zh' | 'en';
 
@@ -2958,11 +2959,7 @@ export default function GiftPage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [inWeCom] = useState(() => typeof navigator !== 'undefined' && /wxwork|wecom/i.test(navigator.userAgent));
-  const navItems = [
-    { label: headerLabels.navQuote, href: '/quote' },
-    { label: headerLabels.navConverter, href: '/converter' },
-    { label: headerLabels.navGift, href: '/gift', active: true, eventName: 'header_gift_click' },
-  ];
+  const navItems = createToolNavigation(headerLabels, 'gift');
 
   useEffect(() => {
     let cancelled = false;
@@ -3051,7 +3048,7 @@ export default function GiftPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
-      <ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" navItems={navItems} onLanguageChange={setLanguage} />
+      <ToolHeader language={language} labels={headerLabels} logoSrc="/brand/unionam-logo.png" homeHref="/" navItems={navItems} onLanguageChange={setLanguage} />
       {authStatus === 'loading' ? <AuthenticationLoading t={t} /> : null}
       {authStatus === 'guest' ? (
         <LoginGate

@@ -41,6 +41,7 @@ fi
 if [[ "$SKIP_LOCAL_VERIFY" != "1" ]]; then
   npm ci --no-audit --no-fund
   npm run typecheck -w apps/homepage
+  npm run test:navigation -w apps/homepage
   npm run test:privacy-consent -w apps/homepage
   npm run build -w apps/homepage
   npm run verify:gift-image-quality -w apps/homepage
