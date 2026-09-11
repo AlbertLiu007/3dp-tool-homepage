@@ -1,6 +1,8 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool, GiftAccessError, type GiftEmployeeAccess } from '@/lib/gift-db';
 import { calculateGiftQuote, type GiftQuoteSettings } from '@/lib/gift-pricing';
+import { LOG_EVENTS } from '@/lib/application-log';
+import { logApplicationEvent } from '@/lib/server-log';
 
 function toSettings(row: RowDataPacket): GiftQuoteSettings {
   return {
@@ -52,6 +54,7 @@ export async function updateGiftQuoteSettings(actor: GiftEmployeeAccess, input: 
     INSERT INTO gift_ops_audit_events (actor_employee_id, action_type, entity_type, entity_id, summary_text, event_payload, request_ip)
     VALUES (?, 'quote_settings_updated', 'gift_quote_settings', ?, ?, ?, ?)
   `, [actor.id, String(id), `${actor.name} 更新了礼品报价设置`, JSON.stringify({ id, materialName: input.materialName, version: 'incremented' }), ip || null]);
+  logApplicationEvent({ component: 'gift-ops', event: LOG_EVENTS.quoteSettingsUpdated, result: 'succeeded', details: { actor_id: actor.id, setting_id: id } });
   return getActiveGiftQuoteSettings();
 }
 

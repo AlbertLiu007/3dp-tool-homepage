@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import mysql, { type Pool, type PoolConnection, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise';
 import type { GiftSession } from '@/lib/gift-auth';
+import { LOG_EVENTS } from '@/lib/application-log';
+import { logApplicationEvent } from '@/lib/server-log';
 import type { VerifiedWeComEmployee } from '@/lib/wecom';
 
 export type GiftApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
@@ -125,9 +127,11 @@ export async function startGiftAiProviderAttempt(input: GiftAiProviderAttemptInp
       input.model.slice(0, 128),
       input.baseHost?.slice(0, 255) || null,
     ]);
-    return { id: Number(result.insertId), startedAt: Date.now() };
+    const attempt = { id: Number(result.insertId), startedAt: Date.now() };
+    logApplicationEvent({ component: 'background', event: LOG_EVENTS.aiProviderAttemptStarted, result: 'started', requestId: input.requestId, details: { attempt_id: attempt.id, operation: input.operation, stage: input.stage, provider: input.provider, model: input.model } });
+    return attempt;
   } catch (error) {
-    console.error('[gift-ai] Unable to start provider attempt log.', error);
+    logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.aiProviderAttemptFailed, result: 'failed', requestId: input.requestId, errorCode: 'provider_attempt_log', details: { error } });
     return null;
   }
 }
@@ -158,8 +162,15 @@ export async function finishGiftAiProviderAttempt(
       update.status,
       attempt.id,
     ]);
+    logApplicationEvent({
+      level: update.status === 'failed' ? 'warn' : 'info', component: 'background',
+      event: update.status === 'failed' ? LOG_EVENTS.aiProviderAttemptFailed : LOG_EVENTS.aiProviderAttemptCompleted,
+      result: update.status, requestId: `ai-attempt-${attempt.id}`, durationMs: Date.now() - attempt.startedAt,
+      errorCode: update.status === 'failed' ? 'provider_attempt_failed' : null,
+      details: { attempt_id: attempt.id, http_status: update.httpStatus ?? null, accepted_billable: Boolean(update.acceptedBillable), cache_hit: Boolean(update.cacheHit) },
+    });
   } catch (error) {
-    console.error('[gift-ai] Unable to finish provider attempt log.', error);
+    logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.aiProviderAttemptFailed, result: 'failed', requestId: `ai-attempt-${attempt.id}`, errorCode: 'provider_attempt_log', details: { error } });
   }
 }
 
@@ -338,6 +349,7 @@ export async function submitGiftEmployeeApplication(session: GiftSession, reason
       VALUES (?, ?, ?, 'pending', ?)
     `, [employee.id, employee.id, fromStatus, trimmedReason]);
     await connection.commit();
+    logApplicationEvent({ component: 'gift', event: LOG_EVENTS.employeeApplicationSubmitted, result: 'succeeded', details: { employee_id: employee.id, from_status: fromStatus, to_status: 'pending' } });
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -437,6 +449,7 @@ export async function reviewGiftEmployee(session: GiftSession, employeeId: numbe
       input.requestIp || null,
     ]);
     await connection.commit();
+    logApplicationEvent({ component: 'gift-ops', event: LOG_EVENTS.employeeApprovalChanged, result: 'succeeded', details: { actor_id: actor.id, employee_id: employeeId, from_status: target.approval_status, to_status: input.approvalStatus, from_role: target.role, to_role: input.role || target.role } });
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -514,6 +527,7 @@ export async function reserveGiftAiUsage(session: GiftSession, usageType: GiftAi
       VALUES (?, ?, CURRENT_DATE, ?, ?, ?)
     `, [requestId, employee.id, usageType, metadata?.provider?.slice(0, 64) || null, metadata?.model?.slice(0, 128) || null]);
     await connection.commit();
+    logApplicationEvent({ component: 'background', event: LOG_EVENTS.aiJobCreated, result: 'created', requestId, details: { usage_type: usageType, provider: metadata?.provider || null, model: metadata?.model || null } });
     return { requestId };
   } catch (error) {
     await connection.rollback();
@@ -529,6 +543,7 @@ export async function markGiftAiUsageRunning(requestId: string, providerJobId: s
     UPDATE gift_ai_usage_events SET usage_status = 'running', provider_job_id = ?
     WHERE request_uid = ? AND usage_status = 'reserved'
   `, [providerJobId, requestId]);
+  logApplicationEvent({ component: 'background', event: LOG_EVENTS.aiJobStarted, result: 'running', requestId });
 }
 
 export async function updateGiftAiUsageModel(requestId: string, model: string) {
@@ -575,6 +590,19 @@ export async function settleGiftAiUsage(requestId: string, outcome: 'succeeded' 
       WHERE id = ?
     `, [outcome, message, usage.id]);
     await connection.commit();
+    const terminalEvent = outcome === 'succeeded'
+      ? LOG_EVENTS.aiJobCompleted
+      : outcome === 'refunded' && !error
+        ? LOG_EVENTS.aiJobCancelled
+        : LOG_EVENTS.aiJobFailed;
+    logApplicationEvent({
+      level: outcome === 'succeeded' ? 'info' : 'warn', component: 'background',
+      event: terminalEvent,
+      result: outcome, requestId,
+      durationMs: usage.created_at ? Date.now() - new Date(usage.created_at).getTime() : 0,
+      errorCode: outcome === 'succeeded' ? null : outcome,
+      details: { usage_type: usage.usage_type },
+    });
   } catch (settleError) {
     await connection.rollback();
     throw settleError;

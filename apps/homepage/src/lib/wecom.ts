@@ -1,3 +1,5 @@
+import { logApplicationEvent } from '@/lib/server-log';
+
 type WeComApiResponse = {
   errcode?: number;
   errmsg?: string;
@@ -199,7 +201,7 @@ export async function verifyWeComEmployee(code: string): Promise<VerifiedWeComEm
     const wantedIds = new Set(departmentIds);
     departmentNames = (departments.department || []).flatMap((department) => department.id && wantedIds.has(department.id) && department.name?.trim() ? [department.name.trim()] : []);
   } catch (error) {
-    console.warn('[gift-auth] WeCom department names could not be synchronized.', error);
+    logApplicationEvent({ level: 'warn', component: 'gift', event: 'auth.wecom_department_sync.failed', result: 'partial', errorCode: 'department_sync', details: { error } });
   }
 
   return {

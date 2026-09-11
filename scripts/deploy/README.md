@@ -7,6 +7,7 @@ The production homepage is deployed as an immutable Git release with a blue/gree
 - Deployment is refused unless the working tree is clean and `HEAD` exactly matches `origin/main`.
 - A release archive is generated from Git, uploaded with a SHA-256 checksum, and extracted into a new release directory.
 - Dependencies, type checks, the production build, image-quality regression checks, and database migrations run before traffic changes.
+- Structured logging, navigation, and privacy-consent tests run before traffic changes.
 - The candidate starts on the inactive port (`3012` or `3013`) and must pass `/api/health` before traffic switches.
 - Nginx continues proxying to `127.0.0.1:3002`; a stable local router atomically selects the blue or green application.
 - If a post-switch health check fails, the router target is restored automatically.

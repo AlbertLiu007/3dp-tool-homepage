@@ -4,6 +4,8 @@ import { databasePool, GiftAccessError, requireGiftEmployeeAccess, type GiftEmpl
 import type { GiftSession } from '@/lib/gift-auth';
 import { calculateGiftQuote, parseGiftQuoteMeasurement } from '@/lib/gift-pricing';
 import { getActiveGiftQuoteSettings } from '@/lib/gift-pricing-db';
+import { LOG_EVENTS } from '@/lib/application-log';
+import { logApplicationEvent } from '@/lib/server-log';
 
 const requestTypes = new Set(['catalog_gift', 'ai_gift', 'business_sample']);
 const finishTypes = new Set(['white', 'paint', 'bronze', 'other']);
@@ -321,6 +323,7 @@ export async function submitGiftAiDraft(session: GiftSession, draftRequestId: nu
       VALUES (?, ?, 'status_changed', 'draft', 'submitted', '员工提交 AI 礼品打印申请')
     `, [draftRequestId, employee.id]);
     await connection.commit();
+    logApplicationEvent({ component: 'gift', event: LOG_EVENTS.printRequestSubmitted, result: 'submitted', details: { employee_id: employee.id, print_request_id: draftRequestId, request_type: 'ai_gift' } });
     return { id: draftRequestId, requestNo: String(rows[0].request_no) };
   } catch (error) {
     await connection.rollback();
@@ -375,6 +378,7 @@ export async function createGiftPrintRequest(session: GiftSession, input: Record
       VALUES (?, ?, 'created', 'submitted', ?)
     `, [result.insertId, employee.id, '员工提交打印申请']);
     await connection.commit();
+    logApplicationEvent({ component: 'gift', event: LOG_EVENTS.printRequestCreated, result: 'submitted', details: { employee_id: employee.id, print_request_id: Number(result.insertId), request_type: requestType } });
     return { id: Number(result.insertId), requestNo };
   } catch (error) {
     await connection.rollback();
@@ -453,6 +457,7 @@ export async function cancelMyGiftPrintRequest(session: GiftSession, requestId: 
       VALUES (?, ?, 'cancelled', ?, 'cancelled', ?)
     `, [requestId, employee.id, current.request_status, (reason.trim() || '员工取消申请').slice(0, 500)]);
     await connection.commit();
+    logApplicationEvent({ component: 'gift', event: LOG_EVENTS.printRequestCancelled, result: 'cancelled', details: { employee_id: employee.id, print_request_id: requestId, from_status: current.request_status, to_status: 'cancelled' } });
   } catch (error) {
     await connection.rollback();
     throw error;

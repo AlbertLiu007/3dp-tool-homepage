@@ -11,6 +11,7 @@ import {
   settleGiftAiUsage,
   type GiftAiUsageType,
 } from '@/lib/gift-db';
+import { logAccessDenied, logApplicationEvent } from '@/lib/server-log';
 
 export async function requireGiftEmployee(options: { approved?: boolean } = {}) {
   const session = getGiftSession();
@@ -40,25 +41,27 @@ export async function withGiftAiUsage<T>(session: Awaited<ReturnType<typeof requ
     return result;
   } catch (error) {
     await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => {
-      console.error('Unable to refund failed gift AI usage:', settleError);
+      logApplicationEvent({ level: 'error', component: 'background', event: 'task.ai.settlement_failed', result: 'failed', requestId: reservation.requestId, errorCode: 'settlement_failed', details: { error: settleError } });
     });
     throw error;
   }
 }
 export function giftAiErrorResponse(error: unknown) {
   if (error instanceof GiftAccessError) {
+    if (error.status === 401 || error.status === 403 || error.status === 429) logAccessDenied({ component: 'gift', status: error.status, errorCode: error.code });
     return NextResponse.json(
       { error: error.code, message: error.message },
       { status: error.status, headers: { 'Cache-Control': 'no-store' } },
     );
   }
   if (error instanceof GiftAiError) {
+    if (error.status === 401 || error.status === 403 || error.status === 429) logAccessDenied({ component: 'gift', status: error.status, errorCode: error.reason });
     return NextResponse.json(
       { error: error.reason, message: error.message },
       { status: error.status, headers: { 'Cache-Control': 'no-store' } },
     );
   }
-  console.error('Unexpected gift AI error:', error);
+  logApplicationEvent({ level: 'error', component: 'gift', event: 'gift.ai_request.failed', result: 'failed', errorCode: 'internal', details: { error } });
   return NextResponse.json(
     { error: 'internal', message: 'Unexpected gift AI service error.' },
     { status: 500, headers: { 'Cache-Control': 'no-store' } },

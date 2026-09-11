@@ -11,6 +11,7 @@ import { databasePool, GiftAccessError, type GiftEmployeeAccess } from '@/lib/gi
 import { recordGiftOpsAudit } from '@/lib/gift-ops-db';
 import { createGiftPreviewGlb } from '@/lib/model/create-preview-glb';
 import { createTransparentPng } from '@/lib/image-transparency';
+import { logApplicationEvent } from '@/lib/server-log';
 
 type EcsRoleCredential = {
   AccessKeyId?: string;
@@ -345,7 +346,7 @@ export async function persistGiftDraftBufferAsset(input: {
           return { ...asset, previewModelAssetId: preview.assetId };
         }
       } catch (error) {
-        console.error('[gift] preview GLB generation failed', error);
+        logApplicationEvent({ level: 'warn', component: 'background', event: 'task.model_preview.failed', result: 'failed', requestId: `gift-draft-${input.requestId}`, errorCode: 'preview_generation', details: { error } });
       }
     }
     return asset;
@@ -504,7 +505,7 @@ export async function persistGiftDraftRemoteAsset(input: {
             return { ...asset, previewModelAssetId: preview.assetId };
           }
         } catch (error) {
-          console.error('[gift] remote model preview generation failed', error);
+          logApplicationEvent({ level: 'warn', component: 'background', event: 'task.model_preview.failed', result: 'failed', requestId: `gift-draft-${input.requestId}`, errorCode: 'preview_generation', details: { error } });
         }
       }
       return asset;
@@ -692,10 +693,10 @@ export async function uploadGiftOpsAsset(actor: GiftEmployeeAccess, modelId: num
     try {
       await persistGiftOpsModelPreviewAsset(actor.id, modelId, uploaded!.assetId, file.name, buffer);
     } catch (error) {
-      console.error('[gift] ops model preview generation failed', error);
+      logApplicationEvent({ level: 'warn', component: 'background', event: 'task.model_preview.failed', result: 'failed', requestId: `gift-model-${modelId}`, errorCode: 'preview_generation', details: { error } });
     }
   }
-  await recordGiftOpsAudit({ actorId: actor.id, action: 'model_asset_uploaded', entityType: 'model', entityId: modelId, summary: `${actor.name} 上传了 ${file.name}`, payload: { assetId: uploaded!.assetId, kind: descriptor.kind, size: file.size }, requestIp: ip }).catch(() => undefined);
+  await recordGiftOpsAudit({ actorId: actor.id, action: 'model_asset_uploaded', entityType: 'model', entityId: modelId, summary: `${actor.name} 上传了模型资产`, payload: { assetId: uploaded!.assetId, kind: descriptor.kind, size: file.size }, requestIp: ip }).catch(() => undefined);
   return uploaded!;
 }
 
@@ -758,10 +759,10 @@ export async function uploadGiftRequestAttachment(actor: GiftEmployeeAccess, req
     try {
       await persistGiftRequestModelPreviewAsset({ requestId, ownerId: Number(requestRows[0].requester_employee_id), sourceAssetId: uploaded!.assetId, sourceFilename: file.name, sourceBuffer: buffer });
     } catch (error) {
-      console.error('[gift] request model preview generation failed', error);
+      logApplicationEvent({ level: 'warn', component: 'background', event: 'task.model_preview.failed', result: 'failed', requestId: `gift-request-${requestId}`, errorCode: 'preview_generation', details: { error } });
     }
   }
-  if (operator) await recordGiftOpsAudit({ actorId: actor.id, action: 'request_attachment_uploaded', entityType: 'print_request', entityId: requestId, summary: `${actor.name} 为申请 ${requestRows[0].request_no} 上传了 ${file.name}`, payload: { assetId: uploaded!.assetId, role: attachmentRole }, requestIp: ip }).catch(() => undefined);
+  if (operator) await recordGiftOpsAudit({ actorId: actor.id, action: 'request_attachment_uploaded', entityType: 'print_request', entityId: requestId, summary: `${actor.name} 为申请 ${requestRows[0].request_no} 上传了附件`, payload: { assetId: uploaded!.assetId, role: attachmentRole }, requestIp: ip }).catch(() => undefined);
   return uploaded!;
 }
 

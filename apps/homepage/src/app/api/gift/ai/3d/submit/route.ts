@@ -4,6 +4,7 @@ import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent
 import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, persistGiftDraftFileAsset } from '@/lib/gift-oss';
+import { logApplicationEvent } from '@/lib/server-log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
       await markGiftAiUsageRunning(reservation.requestId, job.id);
     } catch (error) {
       await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => {
-        console.error('Unable to refund failed 3D generation usage:', settleError);
+        logApplicationEvent({ level: 'error', component: 'background', event: 'task.ai.settlement_failed', result: 'failed', requestId: reservation.requestId, errorCode: 'settlement_failed', details: { error: settleError } });
       });
       throw error;
     }

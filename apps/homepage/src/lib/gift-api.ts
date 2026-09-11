@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAccessError, requireGiftEmployeeAccess } from '@/lib/gift-db';
+import { logAccessDenied, logApplicationEvent } from '@/lib/server-log';
 
 export function enforceGiftMutationOrigin(request: NextRequest) {
   const origin = request.headers.get('origin')?.replace(/\/+$/, '');
@@ -18,8 +19,11 @@ export async function authorizeGiftRequest(request?: NextRequest, mutation = fal
 
 export function giftApiError(error: unknown, context: string) {
   if (error instanceof GiftAccessError) {
+    if (error.status === 401 || error.status === 403 || error.status === 429) {
+      logAccessDenied({ component: 'gift', status: error.status, errorCode: error.code });
+    }
     return NextResponse.json({ error: error.code, message: error.message }, { status: error.status, headers: { 'Cache-Control': 'no-store' } });
   }
-  console.error(`[gift-api] ${context}`, error);
+  logApplicationEvent({ level: 'error', component: 'gift', event: 'gift.request.failed', result: 'failed', errorCode: 'internal', details: { context, error } });
   return NextResponse.json({ error: 'internal', message: 'Unexpected gift service error.' }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
 }

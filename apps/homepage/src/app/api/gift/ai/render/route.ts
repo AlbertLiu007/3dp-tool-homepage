@@ -4,6 +4,7 @@ import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent
 import { isLocalGiftDevelopmentSession, markGiftAiUsageRunning, requireGiftEmployeeAccess, reserveGiftAiUsage, settleGiftAiUsage, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
+import { logApplicationEvent } from '@/lib/server-log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
               : await persistGiftDraftGeneratedImage({ actor: employee!, requestId: draft.id, image, filename: `gift-render-${index + 1}.png`, metadata: { source: 'ai', stage: 'render', sequence: index + 1, usageRequestId: reservation.requestId } });
             return { index, image: saved };
           }).catch((error) => {
-            console.warn('Gift render slot failed after provider fallback:', { index, requestId: reservation.requestId, error });
+            logApplicationEvent({ level: 'warn', component: 'background', event: 'task.ai.render_slot_failed', result: 'failed', requestId: reservation.requestId, errorCode: 'provider_failed', details: { slot: index, error } });
             return { index, error: publicGiftImageError(error) };
           }));
         }
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
           else await settleGiftAiUsage(reservation.requestId, 'refunded', new GiftAiError('All gift concepts failed to generate.'));
           send({ type: 'done', draft, elapsedMs: Date.now() - startedAt });
         } catch (error) {
-          await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => console.error('Unable to refund failed gift AI usage:', settleError));
+          await settleGiftAiUsage(reservation.requestId, 'refunded', error).catch((settleError) => logApplicationEvent({ level: 'error', component: 'background', event: 'task.ai.settlement_failed', result: 'failed', requestId: reservation.requestId, errorCode: 'settlement_failed', details: { error: settleError } }));
           throw error;
         }
       });

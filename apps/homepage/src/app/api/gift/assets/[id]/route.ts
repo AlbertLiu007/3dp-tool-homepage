@@ -4,6 +4,8 @@ import { authorizeGiftRequest, giftApiError } from '@/lib/gift-api';
 import { canAccessGiftAsset } from '@/lib/gift-library-db';
 import { GiftAccessError } from '@/lib/gift-db';
 import { getGiftAssetStream, type GiftImageVariant } from '@/lib/gift-oss';
+import { LOG_EVENTS } from '@/lib/application-log';
+import { logApplicationEvent } from '@/lib/server-log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,6 +21,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
       ? requestedVariant as GiftImageVariant
       : 'card';
     const asset = await getGiftAssetStream(assetId, download ? 'attachment' : 'inline', variant);
+    logApplicationEvent({ component: 'gift', event: LOG_EVENTS.ossAssetRead, result: download ? 'downloaded' : 'read', details: { employee_id: employee.id, asset_id: assetId, disposition: download ? 'attachment' : 'inline', variant } });
     const responseHeaders = new Headers();
     const upstreamHeaders = asset.responseHeaders as Record<string, string | string[] | undefined>;
     const upstreamContentType = upstreamHeaders['content-type'];

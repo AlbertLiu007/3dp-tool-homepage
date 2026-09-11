@@ -110,6 +110,7 @@ EOF
 cd "$RELEASE_DIR"
 npm ci --no-audit --no-fund
 npm run typecheck -w apps/homepage
+npm run test:logging -w apps/homepage
 npm run test:navigation -w apps/homepage
 npm run test:privacy-consent -w apps/homepage
 npm run build -w apps/homepage

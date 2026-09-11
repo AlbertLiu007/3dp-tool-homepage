@@ -7,6 +7,8 @@ import {
   type GiftEmployeeRole,
 } from '@/lib/gift-db';
 import { getGiftPrintRequestDetail } from '@/lib/gift-library-db';
+import { logGiftOpsAuditEvent } from '@/lib/server-log';
+import { sanitizeLogValue } from '@/lib/application-log';
 
 type AuditInput = {
   actorId: number;
@@ -19,6 +21,8 @@ type AuditInput = {
 };
 
 export async function recordGiftOpsAudit(input: AuditInput) {
+  const safeSummary = String(sanitizeLogValue(input.summary));
+  const safePayload = input.payload === undefined ? null : sanitizeLogValue(input.payload);
   await databasePool().execute<ResultSetHeader>(`
     INSERT INTO gift_ops_audit_events (
       actor_employee_id, action_type, entity_type, entity_id, summary_text, event_payload, request_ip
@@ -28,10 +32,11 @@ export async function recordGiftOpsAudit(input: AuditInput) {
     input.action.slice(0, 64),
     input.entityType.slice(0, 32),
     String(input.entityId).slice(0, 128),
-    input.summary.slice(0, 500),
-    input.payload === undefined ? null : JSON.stringify(input.payload),
+    safeSummary.slice(0, 500),
+    safePayload === null ? null : JSON.stringify(safePayload),
     input.requestIp?.slice(0, 64) || null,
   ]);
+  logGiftOpsAuditEvent({ action: input.action, actorId: input.actorId, entityType: input.entityType, entityId: input.entityId });
 }
 
 export async function getGiftOpsDashboard() {
@@ -220,8 +225,9 @@ export async function refundGiftOpsAiUsage(actor: GiftEmployeeAccess, requestUid
     await connection.execute<ResultSetHeader>(`
       INSERT INTO gift_ops_audit_events (actor_employee_id, action_type, entity_type, entity_id, summary_text, event_payload, request_ip)
       VALUES (?, 'ai_job_released', 'ai_usage', ?, ?, ?, ?)
-    `, [actor.id, requestUid, `${actor.name} 释放了 AI 任务 ${requestUid}`, JSON.stringify({ note }), ip || null]);
+    `, [actor.id, requestUid, `${actor.name} 释放了 AI 任务 ${requestUid}`, JSON.stringify(sanitizeLogValue({ note })), ip || null]);
     await connection.commit();
+    logGiftOpsAuditEvent({ action: 'ai_job_released', actorId: actor.id, entityType: 'ai_usage', entityId: requestUid });
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -475,6 +481,7 @@ export async function updateGiftOpsPrintRequest(actor: GiftEmployeeAccess, reque
       VALUES (?, 'print_request_updated', 'print_request', ?, ?, ?, ?)
     `, [actor.id, String(requestId), `${actor.name} 将打印申请 ${current.request_no} 更新为 ${status}`, JSON.stringify({ fromStatus: current.request_status, toStatus: status }), ip || null]);
     await connection.commit();
+    logGiftOpsAuditEvent({ action: 'print_request_updated', actorId: actor.id, entityType: 'print_request', entityId: requestId });
   } catch (error) {
     await connection.rollback();
     throw error;

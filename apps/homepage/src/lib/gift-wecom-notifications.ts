@@ -1,6 +1,8 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { databasePool } from '@/lib/gift-db';
 import { giftPublicUrl, sendWeComApplicationNews } from '@/lib/wecom';
+import { LOG_EVENTS } from '@/lib/application-log';
+import { logApplicationEvent } from '@/lib/server-log';
 
 type NotificationPayload = {
   title: string;
@@ -23,7 +25,7 @@ function ensureNotificationRetryWorker() {
   if (globalThis.unionamGiftNotificationRetryTimer) return;
   const timer = setInterval(() => {
     void deliverPendingGiftWeComNotifications().catch((error) => {
-      console.error('[gift-wecom] Notification retry worker failed.', error);
+      logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.notificationFailed, result: 'failed', errorCode: 'worker_failed', details: { error } });
     });
   }, 5 * 60 * 1000);
   timer.unref();
@@ -61,15 +63,18 @@ async function insertNotification(input: {
 }) {
   const recipientUserIds = await notificationRecipientIds();
   if (!recipientUserIds.length) {
-    console.warn('[gift-wecom] No notification recipient is configured; notification was not queued.');
+    logApplicationEvent({ level: 'warn', component: 'background', event: LOG_EVENTS.notificationFailed, result: 'skipped', requestId: input.key, errorCode: 'no_recipients' });
     return false;
   }
-  await databasePool().execute<ResultSetHeader>(`
+  const [result] = await databasePool().execute<ResultSetHeader>(`
     INSERT IGNORE INTO gift_notification_outbox (
       notification_key, notification_type, request_id, employee_id, recipient_user_ids, payload,
       status, attempt_count, next_attempt_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, CURRENT_TIMESTAMP(3))
   `, [input.key, input.type, input.requestId ?? null, input.employeeId ?? null, JSON.stringify(recipientUserIds), JSON.stringify(input.payload)]);
+  if (result.affectedRows > 0) {
+    logApplicationEvent({ component: 'background', event: LOG_EVENTS.notificationCreated, result: 'created', requestId: input.key, details: { notification_type: input.type, print_request_id: input.requestId ?? null, employee_id: input.employeeId ?? null } });
+  }
   return true;
 }
 
@@ -136,7 +141,7 @@ export async function queueGiftRequestSubmittedNotification(requestId: number) {
       await deliverPendingGiftWeComNotifications(5);
     }
   } catch (error) {
-    console.error('[gift-wecom] Failed to queue or deliver request notification.', error);
+    logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.notificationFailed, result: 'failed', requestId: `gift-request-${requestId}`, errorCode: 'queue_failed', details: { error } });
   }
 }
 
@@ -149,7 +154,7 @@ export async function queueGiftEmployeeApplicationNotification(employeeId: numbe
       await deliverPendingGiftWeComNotifications(5);
     }
   } catch (error) {
-    console.error('[gift-wecom] Failed to queue or deliver employee application notification.', error);
+    logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.notificationFailed, result: 'failed', requestId: `gift-employee-${employeeId}`, errorCode: 'queue_failed', details: { error } });
   }
 }
 
@@ -178,6 +183,9 @@ export async function deliverPendingGiftWeComNotifications(limit = 5) {
       WHERE id = ? AND status IN ('pending', 'failed') AND attempt_count < 5
     `, [row.id]);
     if (claim.affectedRows !== 1) continue;
+    const taskRequestId = `wecom-notification-${row.id}`;
+    const startedAt = Date.now();
+    logApplicationEvent({ component: 'background', event: LOG_EVENTS.notificationStarted, result: 'started', requestId: taskRequestId, details: { notification_id: Number(row.id) } });
 
     try {
       const recipients = parseJsonValue<unknown>(row.recipient_user_ids);
@@ -189,6 +197,7 @@ export async function deliverPendingGiftWeComNotifications(limit = 5) {
         SET status = 'sent', sent_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3), last_error = NULL
         WHERE id = ?
       `, [row.id]);
+      logApplicationEvent({ component: 'background', event: LOG_EVENTS.notificationCompleted, result: 'succeeded', requestId: taskRequestId, durationMs: Date.now() - startedAt, details: { notification_id: Number(row.id) } });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown WeCom notification error.';
       await databasePool().execute<ResultSetHeader>(`
@@ -197,7 +206,7 @@ export async function deliverPendingGiftWeComNotifications(limit = 5) {
           last_error = ?, updated_at = CURRENT_TIMESTAMP(3)
         WHERE id = ?
       `, [message.slice(0, 2000), row.id]);
-      console.error(`[gift-wecom] Notification ${row.id} failed.`, error);
+      logApplicationEvent({ level: 'error', component: 'background', event: LOG_EVENTS.notificationFailed, result: 'failed', requestId: taskRequestId, durationMs: Date.now() - startedAt, errorCode: 'delivery_failed', details: { notification_id: Number(row.id), error } });
     }
   }
 }

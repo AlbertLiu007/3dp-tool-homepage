@@ -2,6 +2,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAccessError, requireGiftEmployeeAccess, type GiftEmployeeAccess } from '@/lib/gift-db';
+import { logAccessDenied, logApplicationEvent } from '@/lib/server-log';
 
 export const GIFT_OPS_CSRF_COOKIE = 'unionam.gift.ops.csrf';
 
@@ -86,12 +87,15 @@ export async function authorizeGiftOpsRequest(request: NextRequest, options: { a
 
 export function giftOpsErrorResponse(error: unknown, context: string) {
   if (error instanceof GiftAccessError) {
+    if (error.status === 401 || error.status === 403 || error.status === 429) {
+      logAccessDenied({ component: 'gift-ops', status: error.status, errorCode: error.code });
+    }
     return NextResponse.json(
       { error: error.code, message: error.message },
       { status: error.status, headers: { 'Cache-Control': 'no-store' } },
     );
   }
-  console.error(`[gift-ops] ${context}`, error);
+  logApplicationEvent({ level: 'error', component: 'gift-ops', event: 'gift_ops.request.failed', result: 'failed', errorCode: 'internal', details: { context, error } });
   return NextResponse.json(
     { error: 'internal', message: 'Unexpected Ops service error.' },
     { status: 500, headers: { 'Cache-Control': 'no-store' } },
