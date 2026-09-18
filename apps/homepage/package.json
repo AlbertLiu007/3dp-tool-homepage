@@ -8,7 +8,7 @@
     "start": "NEXT_DIST_DIR=.next-build next start",
     "typecheck": "tsc --noEmit",
     "test:navigation": "node --import tsx --test src/lib/tool-navigation.test.ts",
-    "test:privacy-consent": "node --import tsx --test src/lib/privacy.test.ts src/lib/gift-ai-consent.test.ts",
+    "test:privacy-consent": "node --import tsx --test src/lib/privacy.test.ts src/lib/gift-ai-consent.test.ts src/lib/gift-render-reference.test.ts",
     "test:logging": "node --import tsx --test src/lib/application-log.test.ts",
     "verify:gift-image-quality": "node --import tsx scripts/verify-gift-image-quality.ts",
     "backfill:gift-transparent-images": "tsx scripts/backfill-gift-transparent-images.ts",

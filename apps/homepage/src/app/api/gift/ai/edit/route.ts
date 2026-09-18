@@ -5,6 +5,7 @@ import { giftAiErrorResponse, giftAiIdempotencyKey, requireGiftAiScenarioConsent
 import { isLocalGiftDevelopmentSession, requireGiftEmployeeAccess, updateGiftAiUsageModel } from '@/lib/gift-db';
 import { ensureGiftAiDraft } from '@/lib/gift-library-db';
 import { assertGiftDraftAsset, findGiftDraftImageByTransformationCacheKey, persistGiftDraftFileAsset, persistGiftDraftGeneratedImage } from '@/lib/gift-oss';
+import { parseRenderReferencePurposes, type RenderReferencePurpose } from '@/lib/gift-render-reference';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,7 +13,7 @@ export const runtime = 'nodejs';
 async function transformationCacheKey(input: {
   image: File;
   mask?: File;
-  referenceImages?: Array<{ file: File; purpose: string }>;
+  referenceImages?: Array<{ file: File; purposes: RenderReferencePurpose[] }>;
   prompt: string;
   monochromeColor?: string;
   stage: string;
@@ -21,12 +22,12 @@ async function transformationCacheKey(input: {
   const maskHash = input.mask
     ? createHash('sha256').update(Buffer.from(await input.mask.arrayBuffer())).digest('hex')
     : null;
-  const referenceImages = await Promise.all((input.referenceImages || []).map(async ({ file, purpose }) => ({
+  const referenceImages = await Promise.all((input.referenceImages || []).map(async ({ file, purposes }) => ({
     hash: createHash('sha256').update(Buffer.from(await file.arrayBuffer())).digest('hex'),
-    purpose,
+    purposes,
   })));
   return createHash('sha256').update(JSON.stringify({
-    version: 'gift-reference-edit-v5',
+    version: 'gift-reference-edit-v6',
     imageHash,
     maskHash,
     referenceImages,
@@ -55,11 +56,9 @@ export async function POST(request: Request) {
     if (typeof referencePurposesValue === 'string' && referencePurposesValue) {
       try { referencePurposes = JSON.parse(referencePurposesValue); } catch { throw new GiftAiError('Reference image purposes are invalid.', 400, 'validation'); }
     }
-    const allowedReferencePurposes = new Set(['auto', 'subject_identity', 'hairstyle', 'clothing_accessories', 'pose_composition', 'material_color', 'overall_style']);
-    if (!Array.isArray(referencePurposes) || referencePurposes.length !== referenceFiles.length || referencePurposes.some((purpose) => typeof purpose !== 'string' || !allowedReferencePurposes.has(purpose))) {
-      throw new GiftAiError('Each reference image must have a valid purpose.', 400, 'validation');
-    }
-    const referenceImages = referenceFiles.map((file, index) => ({ file, purpose: referencePurposes[index] as string }));
+    const parsedPurposes = parseRenderReferencePurposes(referencePurposes, referenceFiles.length);
+    if (!parsedPurposes) throw new GiftAiError('Each reference image must have valid purposes.', 400, 'validation');
+    const referenceImages = referenceFiles.map((file, index) => ({ file, purposes: parsedPurposes[index] }));
     const promptValue = formData.get('prompt');
     const prompt = typeof promptValue === 'string' ? promptValue.trim() : '';
     if (!prompt || prompt.length > 4000) throw new GiftAiError('Edit prompt must contain 1 to 4000 characters.', 400, 'validation');
@@ -109,9 +108,9 @@ export async function POST(request: Request) {
       actor: employee, requestId: draft.id, kind: 'edit_mask', file: mask,
       metadata: { source: 'user', stage: `${stage}_mask` },
     }) : null;
-    const referenceAssets = await Promise.all(referenceImages.map(({ file, purpose }, index) => persistGiftDraftFileAsset({
+    const referenceAssets = await Promise.all(referenceImages.map(({ file, purposes }, index) => persistGiftDraftFileAsset({
       actor: employee, requestId: draft.id, kind: 'reference_image', file,
-      metadata: { source: 'user', stage: `${stage}_reference`, referenceIndex: index, purpose },
+      metadata: { source: 'user', stage: `${stage}_reference`, referenceIndex: index, purposes },
     })));
     const cacheKey = await transformationCacheKey({ image, mask, referenceImages, prompt, monochromeColor, stage });
     const cached = await findGiftDraftImageByTransformationCacheKey(employee, draft.id, cacheKey);
@@ -132,7 +131,7 @@ export async function POST(request: Request) {
       await updateGiftAiUsageModel(requestId, generated.model || configuredImageEditModel());
       const output = await persistGiftDraftGeneratedImage({
         actor: employee, requestId: draft.id, image: generated, filename: `${stage}.png`,
-        metadata: { source: 'ai', stage, usageRequestId: requestId, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null, referenceAssetIds: referenceAssets.map((asset) => asset.assetId), referencePurposes, transformationCacheKey: cacheKey },
+        metadata: { source: 'ai', stage, usageRequestId: requestId, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null, referenceAssetIds: referenceAssets.map((asset) => asset.assetId), referencePurposes: parsedPurposes, transformationCacheKey: cacheKey },
       });
       return { image: output, sourceAssetId: sourceAsset.assetId, maskAssetId: maskAsset?.assetId || null, referenceAssetIds: referenceAssets.map((asset) => asset.assetId) };
     }, giftAiIdempotencyKey(request), { provider: configuredImageEditProvider(), model: configuredImageEditModel() });

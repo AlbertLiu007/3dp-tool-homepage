@@ -50,6 +50,7 @@ import { ToolHeader } from '@unionam/shared-ui';
 import { WeComQrLogin } from '@/components/gift/wecom-qr-login';
 import { GiftModelModal, readGiftModelQuoteMeasurement, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
 import { GIFT_AI_CONSENT_HEADER, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
+import { isPersonRenderReference, renderReferencePurposes, toggleRenderReferencePurpose, type RenderReferencePurpose } from '@/lib/gift-render-reference';
 import { useLanguage } from '@/lib/i18n/use-language';
 import { acceptUnionAmPrivacyPolicy, readUnionAmPrivacyPolicyAcceptance } from '@/lib/privacy';
 import { createToolNavigation } from '@/lib/tool-navigation';
@@ -1169,19 +1170,60 @@ function RenderProgressCard({ language, slot, index, liveElapsedMs, finish, sele
 
 type GiftImageResult = { assetId?: number; dataUrl?: string; url?: string };
 
-type RenderReferencePurpose = 'auto' | 'subject_identity' | 'hairstyle' | 'clothing_accessories' | 'pose_composition' | 'material_color' | 'overall_style';
-type RenderEditReference = { id: string; file: File; purpose: RenderReferencePurpose };
+type RenderEditReference = { id: string; file: File; purposes: RenderReferencePurpose[] };
 type RenderEditRequest = { prompt: string; references: RenderEditReference[]; preserveFinish: boolean };
 
-const renderReferencePurposes: Array<{ id: RenderReferencePurpose; zh: string; en: string }> = [
-  { id: 'auto', zh: '自动识别', en: 'Auto detect' },
-  { id: 'subject_identity', zh: '人物／主体外观', en: 'Person / subject' },
-  { id: 'hairstyle', zh: '发型', en: 'Hairstyle' },
-  { id: 'clothing_accessories', zh: '服装与配饰', en: 'Clothing & accessories' },
-  { id: 'pose_composition', zh: '姿势与构图', en: 'Pose & composition' },
-  { id: 'material_color', zh: '材质与颜色', en: 'Material & color' },
-  { id: 'overall_style', zh: '整体风格', en: 'Overall style' },
-];
+function RenderReferenceCard({ reference, index, language, onChange, onRemove }: {
+  reference: RenderEditReference;
+  index: number;
+  language: GiftLanguage;
+  onChange: (purposes: RenderReferencePurpose[]) => void;
+  onRemove: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [purposesOpen, setPurposesOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const isZh = language === 'zh';
+  const title = isZh ? `参考图 ${index + 1}` : `Reference ${index + 1}`;
+
+  useEffect(() => {
+    const url = URL.createObjectURL(reference.file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [reference.file]);
+
+  useEffect(() => {
+    if (!purposesOpen) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setPurposesOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPurposesOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [purposesOpen]);
+
+  const selectedLabels = renderReferencePurposes.filter(({ id }) => reference.purposes.includes(id)).map((purpose) => isZh ? purpose.zh : purpose.en);
+  return <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <button type="button" onClick={() => setPreviewOpen(true)} disabled={!previewUrl} className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white transition hover:border-cyan-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-500" aria-label={isZh ? `查看${title}大图` : `View ${title} full size`} title={isZh ? '点击查看大图' : 'Click to view full size'}>
+      {previewUrl ? <img src={previewUrl} alt={title} className="h-full w-full object-contain" /> : <ImagePlus className="m-auto h-5 w-5 text-slate-300" />}
+      <span className="absolute bottom-0 right-0 rounded-tl bg-slate-900/70 p-1 text-white"><Maximize2 className="h-3.5 w-3.5" /></span>
+    </button>
+    <div className="min-w-0 flex-[1_1_160px]"><div className="truncate text-xs font-black text-slate-800" title={reference.file.name}>{title} · {reference.file.name}</div><div className="mt-1 text-[10px] font-bold text-slate-400">{Math.max(1, Math.round(reference.file.size / 1024))} KB</div></div>
+    <div ref={menuRef} className={`relative min-w-0 flex-[1_1_190px] sm:max-w-60 ${purposesOpen ? 'z-30' : ''}`}>
+      <button type="button" onClick={() => setPurposesOpen((open) => !open)} aria-expanded={purposesOpen} aria-haspopup="dialog" aria-label={isZh ? `${title} 用途，可多选` : `${title} purposes, multiple selection`} className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 text-left text-xs font-bold text-slate-700 hover:border-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-500"><span className="truncate">{selectedLabels.join(isZh ? '、' : ', ')}</span><ChevronDown className={`h-4 w-4 shrink-0 ${purposesOpen ? 'rotate-180' : ''}`} /></button>
+      {purposesOpen ? <div role="group" aria-label={isZh ? `${title} 用途` : `${title} purposes`} className="absolute right-0 top-[calc(100%+0.35rem)] w-[min(290px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)]"><p className="px-2 pb-2 text-[11px] font-medium text-slate-500">{isZh ? '可多选；自动识别不能与其他用途同选' : 'Select multiple; auto detect is exclusive'}</p><div className="max-h-64 overflow-y-auto">{renderReferencePurposes.map((purpose) => <label key={purpose.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs font-bold text-slate-700 hover:bg-cyan-50"><input type="checkbox" checked={reference.purposes.includes(purpose.id)} onChange={() => onChange(toggleRenderReferencePurpose(reference.purposes, purpose.id))} className="h-4 w-4 accent-[#0b4f9c]" />{isZh ? purpose.zh : purpose.en}</label>)}</div></div> : null}
+    </div>
+    <button type="button" onClick={onRemove} className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-500 hover:border-red-200 hover:text-red-600" aria-label={isZh ? `删除${title}` : `Remove ${title}`}><Trash2 className="h-4 w-4" />{isZh ? '删除' : 'Remove'}</button>
+    {previewOpen && previewUrl ? <GiftZoomImageModal url={previewUrl} title={`${title} · ${reference.file.name}`} language={language} onClose={() => setPreviewOpen(false)} /> : null}
+  </div>;
+}
 
 function RenderImageEditor({ language, source, onGenerate }: {
   language: GiftLanguage;
@@ -1211,7 +1253,7 @@ function RenderImageEditor({ language, source, onGenerate }: {
         : null);
     setNotice(false);
     setReferences((current) => [...current, ...valid.slice(0, remaining).map((file) => ({
-      id: crypto.randomUUID(), file, purpose: 'auto' as const,
+      id: crypto.randomUUID(), file, purposes: ['auto' as const],
     }))]);
   }
 
@@ -1253,8 +1295,8 @@ function RenderImageEditor({ language, source, onGenerate }: {
       </div>
 
       <div className="mt-5">
-        <div className="flex flex-wrap items-end justify-between gap-2"><div><div className="text-xs font-black text-slate-700">{isZh ? '参考图（选填，最多 3 张）' : 'Reference images (optional, up to 3)'}</div><p className="mt-1 text-[11px] font-medium text-slate-500">{isZh ? '为每张图片指定用途，系统不会把它当作编辑蒙版。' : 'Assign a purpose to each image; it will not be treated as an edit mask.'}</p></div><label className={`inline-flex h-10 items-center gap-2 rounded-md border border-dashed px-3 text-xs font-black ${references.length >= 3 ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'cursor-pointer border-cyan-300 text-[#0b4f9c] hover:bg-cyan-50'}`}><UploadCloud className="h-4 w-4" />{isZh ? '添加参考图' : 'Add references'}<input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={references.length >= 3} className="sr-only" onChange={(event) => { addReferences(event.target.files); event.currentTarget.value = ''; }} /></label></div>
-        {references.length ? <div className="mt-3 grid gap-2">{references.map((reference, index) => <div key={reference.id} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center"><div className="min-w-0"><div className="truncate text-xs font-black text-slate-800">{isZh ? `参考图 ${index + 1}` : `Reference ${index + 1}`} · {reference.file.name}</div><div className="mt-1 text-[10px] font-bold text-slate-400">{Math.max(1, Math.round(reference.file.size / 1024))} KB</div></div><select value={reference.purpose} onChange={(event) => setReferences((current) => current.map((item) => item.id === reference.id ? { ...item, purpose: event.target.value as RenderReferencePurpose } : item))} aria-label={isZh ? `参考图 ${index + 1} 用途` : `Purpose of reference ${index + 1}`} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100">{renderReferencePurposes.map((purpose) => <option key={purpose.id} value={purpose.id}>{isZh ? purpose.zh : purpose.en}</option>)}</select><button type="button" onClick={() => setReferences((current) => current.filter((item) => item.id !== reference.id))} className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-500 hover:border-red-200 hover:text-red-600" aria-label={isZh ? `删除参考图 ${index + 1}` : `Remove reference ${index + 1}`}><Trash2 className="h-4 w-4" />{isZh ? '删除' : 'Remove'}</button></div>)}</div> : null}
+        <div className="flex flex-wrap items-end justify-between gap-2"><div><div className="text-xs font-black text-slate-700">{isZh ? '参考图（选填，最多 3 张）' : 'Reference images (optional, up to 3)'}</div><p className="mt-1 text-[11px] font-medium text-slate-500">{isZh ? '点击缩略图查看大图；每张图片可选择多个用途，不会作为编辑蒙版。' : 'Click a thumbnail for a larger view; select multiple purposes per image. References are not edit masks.'}</p></div><label className={`inline-flex h-10 items-center gap-2 rounded-md border border-dashed px-3 text-xs font-black ${references.length >= 3 ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'cursor-pointer border-cyan-300 text-[#0b4f9c] hover:bg-cyan-50'}`}><UploadCloud className="h-4 w-4" />{isZh ? '添加参考图' : 'Add references'}<input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={references.length >= 3} className="sr-only" onChange={(event) => { addReferences(event.target.files); event.currentTarget.value = ''; }} /></label></div>
+        {references.length ? <div className="mt-3 grid gap-2">{references.map((reference, index) => <RenderReferenceCard key={reference.id} reference={reference} index={index} language={language} onChange={(purposes) => setReferences((current) => current.map((item) => item.id === reference.id ? { ...item, purposes } : item))} onRemove={() => setReferences((current) => current.filter((item) => item.id !== reference.id))} />)}</div> : null}
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1262,7 +1304,7 @@ function RenderImageEditor({ language, source, onGenerate }: {
         <div><div className="text-xs font-black text-slate-700">{isZh ? '保留项' : 'Preserve'}</div><div className="mt-2 grid gap-2 text-xs font-bold text-slate-600 sm:grid-cols-2"><label className="flex items-center gap-2"><input type="checkbox" checked={preservePoseAndBase} onChange={(event) => setPreservePoseAndBase(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '姿势、构图和底座' : 'Pose, composition & base'}</label><label className="flex items-center gap-2"><input type="checkbox" checked={preservePrintability} onChange={(event) => setPreservePrintability(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '纯白背景和可打印结构' : 'White background & printability'}</label><label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={preserveFinish} onChange={(event) => setPreserveFinish(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '当前表面效果和颜色' : 'Current finish and color'}</label></div></div>
       </div>
 
-      {references.some((reference) => ['subject_identity', 'hairstyle'].includes(reference.purpose)) ? <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">{isZh ? '人物参考图仅限本人或已获得被编辑者明确授权的图片。' : 'Person references must depict you or someone who has explicitly authorized the edit.'}</p> : null}
+      {references.some((reference) => isPersonRenderReference(reference.purposes)) ? <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">{isZh ? '人物参考图仅限本人或已获得被编辑者明确授权的图片。' : 'Person references must depict you or someone who has explicitly authorized the edit.'}</p> : null}
       <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" onClick={() => void generate()} disabled={!prompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}{editing ? (isZh ? '正在生成新版本…' : 'Generating new version…') : (isZh ? '生成新的渲染图' : 'Generate new render')}</button>{notice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{isZh ? '新版本已生成并自动选中' : 'New version generated and selected'}</span> : null}{error ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</span> : null}</div>
     </div>
   );
@@ -2223,7 +2265,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     if (input.draftRequestId) formData.set('draftRequestId', String(input.draftRequestId));
     if (input.sourceAssetId) formData.set('sourceAssetId', String(input.sourceAssetId));
     input.request.references.forEach((reference) => formData.append('referenceImages', reference.file, reference.file.name));
-    formData.set('referencePurposes', JSON.stringify(input.request.references.map((reference) => reference.purpose)));
+    formData.set('referencePurposes', JSON.stringify(input.request.references.map((reference) => reference.purposes)));
 
     let submittedPrompt = input.request.prompt;
     if (input.effect) {

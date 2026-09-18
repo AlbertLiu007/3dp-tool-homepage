@@ -1,6 +1,7 @@
 import { ensureServerStl } from '@/lib/model/server-glb-to-stl';
 import { create3dPrintInputPng, createMonochromePaintPng, createTransparentPng, createWhiteMattePng } from '@/lib/image-transparency';
 import { finishGiftAiProviderAttempt, startGiftAiProviderAttempt } from '@/lib/gift-db';
+import { renderReferencePurposes } from '@/lib/gift-render-reference';
 import sharp from 'sharp';
 
 type ImageApiItem = {
@@ -852,23 +853,15 @@ async function imageFileDataUrl(file: File) {
 }
 
 async function requestApimartEditedImage(
-  input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purpose: string }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
+  input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purposes: string[] }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
   context: GiftImageInvocationContext,
 ) {
-  const purposeDescriptions: Record<string, string> = {
-    auto: 'the visually relevant attributes described by the edit request',
-    subject_identity: 'the person or main subject identity and appearance',
-    hairstyle: 'the hairstyle only',
-    clothing_accessories: 'clothing and accessories only',
-    pose_composition: 'pose and composition only',
-    material_color: 'materials and colors only',
-    overall_style: 'overall visual style only',
-  };
+  const purposeDescriptions = Object.fromEntries(renderReferencePurposes.map(({ id, description }) => [id, description]));
   const imageUrls = [await imageFileDataUrl(input.image)];
   const referenceInstructions: string[] = [];
   for (const [index, reference] of (input.referenceImages || []).entries()) {
     imageUrls.push(await imageFileDataUrl(reference.file));
-    referenceInstructions.push(`Reference image ${index + 2} is provided only for ${purposeDescriptions[reference.purpose] || purposeDescriptions.auto}. Use it to guide the requested edit, but do not copy unrelated background, objects, text, composition, or other attributes.`);
+    referenceInstructions.push(`Reference image ${index + 2} is provided only for ${reference.purposes.map((purpose) => purposeDescriptions[purpose]).join(' and ')}. Use it to guide the requested edit, but do not copy unrelated background, objects, text, composition, or other attributes.`);
   }
   let maskInstruction = '';
   if (input.mask) {
@@ -1164,7 +1157,7 @@ export function publicGiftImageError(error: unknown) {
   return { code: 'upstream', message: 'Image generation is temporarily unavailable.' };
 }
 
-export async function editGiftImage(input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purpose: string }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
+export async function editGiftImage(input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purposes: string[] }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
   if (configuredGiftImageProvider() === 'apimart') {
     const configuration = apimartImageConfiguration();
     if (!configuration) throw new GiftAiError('APIMART_IMAGE_API_KEY is not configured.', 503, 'configuration');
