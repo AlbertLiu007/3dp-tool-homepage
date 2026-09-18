@@ -146,9 +146,9 @@ const SLA_PRINTABILITY_CONSTRAINT = [
 ].join(' ');
 const PRINTABILITY_CONSTRAINT = SLA_PRINTABILITY_CONSTRAINT;
 const WHITE_MATTE_PRINTABILITY_CONSTRAINT = [
-  'Preserve the unchanged subject geometry, pose, proportions, silhouette, camera angle, framing, and every connected part while preparing it for SLA resin 3D printing.',
+  'Apply only the requested edit. Preserve every unrequested part of the subject, including its geometry, pose, proportions, silhouette, camera angle, framing, supporting base, and connected parts while preparing it for SLA resin 3D printing.',
   SLA_PRINTABILITY_CONSTRAINT,
-  'Do not redesign, simplify, add, remove, split, recolor, or structurally modify the subject during this white-background preparation.',
+  'Treat the explicitly requested changes as the only allowed exception: do not otherwise redesign, simplify, add, remove, split, recolor, or structurally modify the subject.',
 ].join(' ');
 
 export const IMAGE_GENERATION_MODEL = 'grok-imagine-image-quality';
@@ -852,16 +852,33 @@ async function imageFileDataUrl(file: File) {
 }
 
 async function requestApimartEditedImage(
-  input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
+  input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purpose: string }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean },
   context: GiftImageInvocationContext,
 ) {
+  const purposeDescriptions: Record<string, string> = {
+    auto: 'the visually relevant attributes described by the edit request',
+    subject_identity: 'the person or main subject identity and appearance',
+    hairstyle: 'the hairstyle only',
+    clothing_accessories: 'clothing and accessories only',
+    pose_composition: 'pose and composition only',
+    material_color: 'materials and colors only',
+    overall_style: 'overall visual style only',
+  };
   const imageUrls = [await imageFileDataUrl(input.image)];
+  const referenceInstructions: string[] = [];
+  for (const [index, reference] of (input.referenceImages || []).entries()) {
+    imageUrls.push(await imageFileDataUrl(reference.file));
+    referenceInstructions.push(`Reference image ${index + 2} is provided only for ${purposeDescriptions[reference.purpose] || purposeDescriptions.auto}. Use it to guide the requested edit, but do not copy unrelated background, objects, text, composition, or other attributes.`);
+  }
   let maskInstruction = '';
   if (input.mask) {
     imageUrls.push(await imageFileDataUrl(input.mask));
-    maskInstruction = ' The first reference image is the source image. The second reference image is an edit mask: change only the white mask area and preserve the black mask area exactly.';
+    maskInstruction = ` Reference image ${imageUrls.length} is an edit mask: change only the white mask area and preserve the black mask area exactly.`;
   }
-  const prompt = `${input.prompt}${maskInstruction}\n${input.whiteBackground ? WHITE_MATTE_PRINTABILITY_CONSTRAINT : PRINTABILITY_CONSTRAINT}`;
+  const referenceInstruction = referenceInstructions.length
+    ? ` The first reference image is the source render that must be edited. ${referenceInstructions.join(' ')}`
+    : '';
+  const prompt = `${input.prompt}${referenceInstruction}${maskInstruction}\n${input.whiteBackground ? WHITE_MATTE_PRINTABILITY_CONSTRAINT : PRINTABILITY_CONSTRAINT}`;
   return requestApimartGeneratedImage(prompt, input.monochromeColor, context, 'edit', imageUrls);
 }
 
@@ -1147,7 +1164,7 @@ export function publicGiftImageError(error: unknown) {
   return { code: 'upstream', message: 'Image generation is temporarily unavailable.' };
 }
 
-export async function editGiftImage(input: { image: File; mask?: File; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
+export async function editGiftImage(input: { image: File; mask?: File; referenceImages?: Array<{ file: File; purpose: string }>; prompt: string; monochromeColor?: string; whiteBackground?: boolean }, context: GiftImageInvocationContext = {}) {
   if (configuredGiftImageProvider() === 'apimart') {
     const configuration = apimartImageConfiguration();
     if (!configuration) throw new GiftAiError('APIMART_IMAGE_API_KEY is not configured.', 503, 'configuration');
@@ -1161,6 +1178,9 @@ export async function editGiftImage(input: { image: File; mask?: File; prompt: s
       if (error instanceof ImageProviderUnavailableError || error instanceof ImageProviderRejectedError) recordCircuitFailure(key);
       throw error;
     }
+  }
+  if (input.referenceImages?.length) {
+    throw new GiftAiError('The configured image provider does not support reference-image editing.', 503, 'configuration');
   }
   const configuration = imageConfiguration();
   let lastError: unknown;

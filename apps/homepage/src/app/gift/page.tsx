@@ -1168,6 +1168,105 @@ function RenderProgressCard({ language, slot, index, liveElapsedMs, finish, sele
 }
 
 type GiftImageResult = { assetId?: number; dataUrl?: string; url?: string };
+
+type RenderReferencePurpose = 'auto' | 'subject_identity' | 'hairstyle' | 'clothing_accessories' | 'pose_composition' | 'material_color' | 'overall_style';
+type RenderEditReference = { id: string; file: File; purpose: RenderReferencePurpose };
+type RenderEditRequest = { prompt: string; references: RenderEditReference[]; preserveFinish: boolean };
+
+const renderReferencePurposes: Array<{ id: RenderReferencePurpose; zh: string; en: string }> = [
+  { id: 'auto', zh: '自动识别', en: 'Auto detect' },
+  { id: 'subject_identity', zh: '人物／主体外观', en: 'Person / subject' },
+  { id: 'hairstyle', zh: '发型', en: 'Hairstyle' },
+  { id: 'clothing_accessories', zh: '服装与配饰', en: 'Clothing & accessories' },
+  { id: 'pose_composition', zh: '姿势与构图', en: 'Pose & composition' },
+  { id: 'material_color', zh: '材质与颜色', en: 'Material & color' },
+  { id: 'overall_style', zh: '整体风格', en: 'Overall style' },
+];
+
+function RenderImageEditor({ language, source, onGenerate }: {
+  language: GiftLanguage;
+  source: string;
+  onGenerate: (request: RenderEditRequest) => Promise<string | null>;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const [references, setReferences] = useState<RenderEditReference[]>([]);
+  const [scope, setScope] = useState<'auto' | 'subject' | 'whole'>('auto');
+  const [preservePoseAndBase, setPreservePoseAndBase] = useState(true);
+  const [preservePrintability, setPreservePrintability] = useState(true);
+  const [preserveFinish, setPreserveFinish] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isZh = language === 'zh';
+
+  function addReferences(files: FileList | null) {
+    if (!files?.length) return;
+    const incoming = Array.from(files);
+    const valid = incoming.filter((file) => ['image/png', 'image/jpeg', 'image/webp'].includes(file.type) && file.size <= 10 * 1024 * 1024);
+    const remaining = Math.max(0, 3 - references.length);
+    setError(valid.length !== incoming.length
+      ? (isZh ? '参考图仅支持 JPG、PNG、WebP，且单张不能超过 10MB。' : 'Reference images must be JPG, PNG, or WebP and no larger than 10MB each.')
+      : valid.length > remaining
+        ? (isZh ? '最多只能添加 3 张参考图。' : 'You can add up to 3 reference images.')
+        : null);
+    setNotice(false);
+    setReferences((current) => [...current, ...valid.slice(0, remaining).map((file) => ({
+      id: crypto.randomUUID(), file, purpose: 'auto' as const,
+    }))]);
+  }
+
+  async function generate() {
+    if (!prompt.trim() || editing) return;
+    setEditing(true);
+    setError(null);
+    setNotice(false);
+    const scopeInstruction = scope === 'subject'
+      ? (isZh ? '修改范围仅限礼品主体，保持背景不变。' : 'Limit the edit to the gift subject and keep the background unchanged.')
+      : scope === 'whole'
+        ? (isZh ? '允许根据要求调整整张图片。' : 'The whole image may be changed as requested.')
+        : (isZh ? '根据修改要求和参考图自动判断必要的修改范围。' : 'Infer the necessary edit area from the instructions and reference images.');
+    const preserveInstructions = [
+      preservePoseAndBase ? (isZh ? '保持原来的姿势、比例、构图和完整底座。' : 'Preserve the original pose, proportions, composition, and complete base.') : '',
+      preservePrintability ? (isZh ? '保持纯白背景、所有部件连接和结构稳定，并继续满足 SLA 3D 打印要求。' : 'Keep the pure-white background, all parts connected, structurally stable, and suitable for SLA 3D printing.') : '',
+    ].filter(Boolean).join(' ');
+    const result = await onGenerate({
+      prompt: `${prompt.trim()}\n${scopeInstruction}${preserveInstructions ? ` ${preserveInstructions}` : ''}`,
+      references,
+      preserveFinish,
+    });
+    setEditing(false);
+    if (result) {
+      setError(result);
+      return;
+    }
+    setPrompt('');
+    setReferences([]);
+    setNotice(true);
+  }
+
+  return (
+    <div className="rounded-xl border border-blue-100 bg-white p-5">
+      <div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{isZh ? '继续编辑选中的渲染图' : 'Edit the selected render'}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{isZh ? '可以只输入文字，也可以添加参考图并说明修改要求。每次生成都会保存为新的渲染版本。' : 'Use text alone, or combine reference images with instructions. Every result is saved as a new render version.'}</p></div></div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-[112px_minmax(0,1fr)]">
+        <div><div className="mb-2 text-xs font-black text-slate-700">{isZh ? '当前选中图' : 'Selected render'}</div><img src={source} alt={isZh ? '当前选中的礼品渲染图' : 'Selected gift render'} className="aspect-square w-28 rounded-lg border border-slate-200 bg-white object-contain" /></div>
+        <label className="text-xs font-black text-slate-700">{isZh ? '修改要求' : 'Edit instructions'}<textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); setError(null); setNotice(false); }} rows={4} maxLength={3500} placeholder={isZh ? '例如：参考图 1 的人物外观和图 2 的服装，只修改人物，保留原姿势、底座和纯白背景。' : 'Example: use the person from image 1 and clothing from image 2; change only the person and preserve the original pose, base, and white background.'} className="mt-2 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex flex-wrap items-end justify-between gap-2"><div><div className="text-xs font-black text-slate-700">{isZh ? '参考图（选填，最多 3 张）' : 'Reference images (optional, up to 3)'}</div><p className="mt-1 text-[11px] font-medium text-slate-500">{isZh ? '为每张图片指定用途，系统不会把它当作编辑蒙版。' : 'Assign a purpose to each image; it will not be treated as an edit mask.'}</p></div><label className={`inline-flex h-10 items-center gap-2 rounded-md border border-dashed px-3 text-xs font-black ${references.length >= 3 ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'cursor-pointer border-cyan-300 text-[#0b4f9c] hover:bg-cyan-50'}`}><UploadCloud className="h-4 w-4" />{isZh ? '添加参考图' : 'Add references'}<input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={references.length >= 3} className="sr-only" onChange={(event) => { addReferences(event.target.files); event.currentTarget.value = ''; }} /></label></div>
+        {references.length ? <div className="mt-3 grid gap-2">{references.map((reference, index) => <div key={reference.id} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_190px_auto] sm:items-center"><div className="min-w-0"><div className="truncate text-xs font-black text-slate-800">{isZh ? `参考图 ${index + 1}` : `Reference ${index + 1}`} · {reference.file.name}</div><div className="mt-1 text-[10px] font-bold text-slate-400">{Math.max(1, Math.round(reference.file.size / 1024))} KB</div></div><select value={reference.purpose} onChange={(event) => setReferences((current) => current.map((item) => item.id === reference.id ? { ...item, purpose: event.target.value as RenderReferencePurpose } : item))} aria-label={isZh ? `参考图 ${index + 1} 用途` : `Purpose of reference ${index + 1}`} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100">{renderReferencePurposes.map((purpose) => <option key={purpose.id} value={purpose.id}>{isZh ? purpose.zh : purpose.en}</option>)}</select><button type="button" onClick={() => setReferences((current) => current.filter((item) => item.id !== reference.id))} className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-500 hover:border-red-200 hover:text-red-600" aria-label={isZh ? `删除参考图 ${index + 1}` : `Remove reference ${index + 1}`}><Trash2 className="h-4 w-4" />{isZh ? '删除' : 'Remove'}</button></div>)}</div> : null}
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div><div className="text-xs font-black text-slate-700">{isZh ? '修改范围' : 'Edit scope'}</div><div className="mt-2 flex flex-wrap gap-2">{([['auto', isZh ? '自动判断' : 'Auto'], ['subject', isZh ? '礼品主体' : 'Gift subject'], ['whole', isZh ? '整张图片' : 'Whole image']] as const).map(([id, label]) => <button key={id} type="button" onClick={() => setScope(id)} className={`h-9 rounded-md border px-3 text-xs font-black transition ${scope === id ? 'border-[#0b4f9c] bg-blue-50 text-[#0b4f9c]' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-300'}`}>{label}</button>)}</div></div>
+        <div><div className="text-xs font-black text-slate-700">{isZh ? '保留项' : 'Preserve'}</div><div className="mt-2 grid gap-2 text-xs font-bold text-slate-600 sm:grid-cols-2"><label className="flex items-center gap-2"><input type="checkbox" checked={preservePoseAndBase} onChange={(event) => setPreservePoseAndBase(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '姿势、构图和底座' : 'Pose, composition & base'}</label><label className="flex items-center gap-2"><input type="checkbox" checked={preservePrintability} onChange={(event) => setPreservePrintability(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '纯白背景和可打印结构' : 'White background & printability'}</label><label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={preserveFinish} onChange={(event) => setPreserveFinish(event.target.checked)} className="accent-[#0b4f9c]" />{isZh ? '当前表面效果和颜色' : 'Current finish and color'}</label></div></div>
+      </div>
+
+      {references.some((reference) => ['subject_identity', 'hairstyle'].includes(reference.purpose)) ? <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-5 text-amber-800">{isZh ? '人物参考图仅限本人或已获得被编辑者明确授权的图片。' : 'Person references must depict you or someone who has explicitly authorized the edit.'}</p> : null}
+      <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" onClick={() => void generate()} disabled={!prompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}{editing ? (isZh ? '正在生成新版本…' : 'Generating new version…') : (isZh ? '生成新的渲染图' : 'Generate new render')}</button>{notice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{isZh ? '新版本已生成并自动选中' : 'New version generated and selected'}</span> : null}{error ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</span> : null}</div>
+    </div>
+  );
+}
 type GiftAiClientError = { configuration: boolean; reason?: string; message?: string };
 
 const MODEL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -1394,6 +1493,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const surfaceStepRef = useRef<HTMLDivElement>(null);
   const imageUploadStepRef = useRef<HTMLDivElement>(null);
   const imageSurfaceStepRef = useRef<HTMLDivElement>(null);
+  const imageEditStepRef = useRef<HTMLDivElement>(null);
   const imageModelStepRef = useRef<HTMLDivElement>(null);
   const [finish, setFinish] = useState<FinishMode>('paint');
   const [surfaceEffect, setSurfaceEffect] = useState<SurfaceEffectId | null>(null);
@@ -1412,11 +1512,6 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
   const renderResultsRef = useRef<HTMLDivElement>(null);
   const [briefDraftRequestId, setBriefDraftRequestId] = useState<number | null>(null);
   const [selectedRender, setSelectedRender] = useState<number | null>(null);
-  const [editPrompt, setEditPrompt] = useState('');
-  const [editMask, setEditMask] = useState<File | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [editNotice, setEditNotice] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
   const [briefModel, setBriefModel] = useState<GeneratedGiftModel>();
   const [previewModel, setPreviewModel] = useState<GeneratedGiftModel | null>(null);
   const [previewRender, setPreviewRender] = useState<{ url: string; index: number } | null>(null);
@@ -1637,7 +1732,6 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
 
   function clearAiError() {
     setAiError(null);
-    setEditNotice(false);
   }
 
   async function requestImageEdit(file: File, prompt: string, outputName: string, options: {
@@ -2012,8 +2106,14 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function scrollToImageStep(step: 'upload' | 'surface' | 'model') {
-    const target = step === 'upload' ? imageUploadStepRef.current : step === 'surface' ? imageSurfaceStepRef.current : imageModelStepRef.current;
+  function scrollToImageStep(step: 'upload' | 'surface' | 'edit' | 'model') {
+    const target = step === 'upload'
+      ? imageUploadStepRef.current
+      : step === 'surface'
+        ? imageSurfaceStepRef.current
+        : step === 'edit'
+          ? imageEditStepRef.current
+          : imageModelStepRef.current;
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -2102,49 +2202,101 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
     }
   }
 
-  async function editSelectedImage() {
+  async function submitEditedRender(input: {
+    source: string;
+    sourceAssetId?: number;
+    draftRequestId?: number | null;
+    title: string;
+    stage: string;
+    request: RenderEditRequest;
+    effect: SurfaceEffectId | null;
+  }) {
+    if (!(await requestAiScenarioConsent('apimart'))) return null;
+    clearAiError();
+    const sourceFile = await imageSourceToFile(input.source, 'gift-render.png');
+    const formData = new FormData();
+    formData.set('image', sourceFile);
+    formData.set('stage', input.stage);
+    formData.set('draftTitle', input.title);
+    formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
+    formData.set('brief', brief);
+    if (input.draftRequestId) formData.set('draftRequestId', String(input.draftRequestId));
+    if (input.sourceAssetId) formData.set('sourceAssetId', String(input.sourceAssetId));
+    input.request.references.forEach((reference) => formData.append('referenceImages', reference.file, reference.file.name));
+    formData.set('referencePurposes', JSON.stringify(input.request.references.map((reference) => reference.purpose)));
+
+    let submittedPrompt = input.request.prompt;
+    if (input.effect) {
+      const effectColor = input.effect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === input.effect)?.hex || paintColor;
+      const backendFinish = surfaceEffectBackend(input.effect, effectColor);
+      formData.set('finishType', backendFinish.finishType);
+      if (backendFinish.paintColor) formData.set('paintColor', backendFinish.paintColor);
+      if (input.request.preserveFinish) {
+        submittedPrompt = `${submittedPrompt}\n${surfaceEffectPrompt(language, input.effect, effectColor)}`;
+        if (input.effect !== 'transparent' && input.effect !== 'bronze') formData.set('monochromeColor', effectColor);
+      }
+    }
+    formData.set('prompt', submittedPrompt);
+    const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'apimart' } });
+    if (!response.ok) throw await apiErrorMessage(response);
+    const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult };
+    if (!payload.draft?.id || !payload.image?.assetId || !giftImageSource(payload.image)) throw { configuration: false, message: 'Edited image was not saved to the gift draft.' };
+    return { draftId: payload.draft.id, image: payload.image };
+  }
+
+  async function editSelectedImage(request: RenderEditRequest): Promise<string | null> {
     const selectedImage = selectedRender === null ? undefined : renderImages[selectedRender];
     const source = giftImageSource(selectedImage);
-    if (!source || !editPrompt.trim() || !surfaceEffect) return;
-    if (!(await requestAiScenarioConsent('apimart'))) return;
+    if (!source || !request.prompt.trim() || !surfaceEffect) return language === 'zh' ? '请先选择渲染图并填写修改要求。' : 'Select a render and enter edit instructions first.';
     clearAiError();
-    setEditNotice(false);
-    setEditError(null);
-    setEditing(true);
     try {
-      const sourceFile = await imageSourceToFile(source, 'gift-render.png');
-      const formData = new FormData();
-      formData.set('image', sourceFile);
-      formData.set('stage', 'render_edit');
-      formData.set('draftTitle', language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft');
-      const backendFinish = surfaceEffectBackend(surfaceEffect, paintColor);
-      formData.set('finishType', backendFinish.finishType);
-      formData.set('businessScene', selectedProfileTags.slice(0, 4).join(' · '));
-      formData.set('brief', brief);
-      if (backendFinish.paintColor) formData.set('paintColor', backendFinish.paintColor);
-      if (surfaceEffect !== 'transparent' && surfaceEffect !== 'bronze') formData.set('monochromeColor', surfaceEffect === 'custom' ? paintColor : surfaceEffectPresets.find((item) => item.id === surfaceEffect)?.hex || paintColor);
-      if (briefDraftRequestId) formData.set('draftRequestId', String(briefDraftRequestId));
-      const selectedAssetId = selectedImage?.assetId;
-      if (selectedAssetId) formData.set('sourceAssetId', String(selectedAssetId));
-      const finishConstraint = surfaceEffectPrompt(language, surfaceEffect, paintColor);
-      formData.set('prompt', `${editPrompt.trim()}\n${finishConstraint}`);
-      if (editMask) formData.set('mask', editMask);
-      const response = await fetch('/api/gift/ai/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Idempotency-Key': crypto.randomUUID(), [GIFT_AI_CONSENT_HEADER]: 'apimart' } });
-      if (!response.ok) throw await apiErrorMessage(response);
-      const payload = await response.json() as { draft?: { id?: number }; image?: GiftImageResult };
-      if (!payload.draft?.id || !payload.image?.assetId || !giftImageSource(payload.image)) throw { configuration: false, message: 'Edited image was not saved to the gift draft.' };
-      setBriefDraftRequestId(payload.draft.id);
-      setRenderImages((current) => [...current, payload.image!]);
-      setRenderSlots((current) => [...current, { status: 'ready', image: payload.image!, percent: 100, elapsedMs: 0 }]);
+      const payload = await submitEditedRender({
+        source,
+        sourceAssetId: selectedImage?.assetId,
+        draftRequestId: briefDraftRequestId,
+        title: language === 'zh' ? '客户专属 AI 礼品草稿' : 'Customer-specific AI gift draft',
+        stage: 'render_edit',
+        request,
+        effect: surfaceEffect,
+      });
+      if (!payload) return language === 'zh' ? '已取消本次编辑。' : 'This edit was cancelled.';
+      setBriefDraftRequestId(payload.draftId);
+      setRenderImages((current) => [...current, payload.image]);
+      setRenderSlots((current) => [...current, { status: 'ready', image: payload.image, percent: 100, elapsedMs: 0 }]);
       setSelectedRender(renderImages.length);
-      setEditPrompt('');
-      setEditMask(null);
-      setEditNotice(true);
+      return null;
     } catch (error) {
-      setEditError(editClientErrorMessage(error, language));
+      const message = editClientErrorMessage(error, language);
       setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
-    } finally {
-      setEditing(false);
+      return message;
+    }
+  }
+
+  async function editImageGeneratedRender(request: RenderEditRequest): Promise<string | null> {
+    if (!imagePaintPreview || !imageSurfaceEffect) return language === 'zh' ? '请先生成礼品表面渲染图。' : 'Generate a surface render first.';
+    try {
+      const payload = await submitEditedRender({
+        source: imagePaintPreview,
+        sourceAssetId: imagePaintAssetId || undefined,
+        draftRequestId: imageDraftRequestId,
+        title: language === 'zh' ? '图片生成 3D 礼品草稿' : 'Image-to-3D gift draft',
+        stage: 'image_render_edit',
+        request,
+        effect: imageSurfaceEffect,
+      });
+      if (!payload) return language === 'zh' ? '已取消本次编辑。' : 'This edit was cancelled.';
+      setImageDraftRequestId(payload.draftId);
+      setImagePaintAssetId(payload.image.assetId || null);
+      setImagePaintPreview(giftImageSource(payload.image));
+      setImageView('paint');
+      setImageStatus('idle');
+      setImageModel(undefined);
+      setModelProgress(null);
+      return null;
+    } catch (error) {
+      const message = editClientErrorMessage(error, language);
+      setAiError(typeof error === 'object' && error ? error as GiftAiClientError : { configuration: false });
+      return message;
     }
   }
 
@@ -2267,16 +2419,16 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || !surfaceEffect || briefStatus === 'generating-render'} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div>
         </div>
 
-        {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} language={language} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); setEditNotice(false); }} onPreview={() => slot.image && setPreviewRender({ url: giftImageSource(slot.image), index })} labels={labels} />)}</div>
+        {renderSlots.length ? <div ref={renderResultsRef} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 md:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h3 className="text-lg font-black text-slate-950">{briefStatus === 'generating-render' ? labels.renderProgressTitle : labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p></div><span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-[#0b4f9c] shadow-sm">{renderSlots.filter((slot) => slot.status === 'ready').length}/{renderSlots.length} {language === 'zh' ? '已完成' : 'ready'}</span></div><div className="mt-5 grid gap-4 md:grid-cols-3">{renderSlots.map((slot, index) => <RenderProgressCard key={`${index}-${slot.status}-${slot.image?.assetId || ''}`} language={language} slot={slot} index={index} liveElapsedMs={slot.status === 'loading' ? renderElapsedMs : slot.elapsedMs} finish={finish} selected={selectedRender === index} onSelect={() => { if (slot.status !== 'ready') return; setSelectedRender(index); }} onPreview={() => slot.image && setPreviewRender({ url: giftImageSource(slot.image), index })} labels={labels} />)}</div>
 
-          {selectedRender !== null && renderImages[selectedRender] ? <div className="mt-6 rounded-xl border border-blue-100 bg-white p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{editError}</span> : null}</div></div> : null}
+          {selectedRender !== null && renderImages[selectedRender] ? <div className="mt-6"><RenderImageEditor language={language} source={giftImageSource(renderImages[selectedRender])} onGenerate={editSelectedImage} /></div> : null}
 
           {briefStatus === 'generating-model' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : <button type="button" onClick={generateBriefModel} disabled={selectedRender === null || !renderImages[selectedRender]} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45"><Boxes className="h-5 w-5" />{labels.generateFromRender}</button>}
         </div> : null}
         {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
       </div></div>
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
-      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => { setSelectedRender(previewRender.index); setEditNotice(false); }} /> : null}
+      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => setSelectedRender(previewRender.index)} /> : null}
       {aiConsentProvider ? <AiScenarioConsentModal key={aiConsentProvider} provider={aiConsentProvider} language={language} onCancel={() => resolveAiScenarioConsent(false)} onConfirm={() => resolveAiScenarioConsent(true)} /> : null}
     </section>
   );
@@ -2292,6 +2444,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
             {[
               { key: 'upload' as const, label: language === 'zh' ? '上传图片（自动去除背景）' : 'Upload image (auto background removal)', complete: Boolean(imageUrl) && !imagePreparing },
               { key: 'surface' as const, label: language === 'zh' ? '选择礼品表面效果' : 'Choose gift surface effect', complete: Boolean(imagePaintPreview) && !imagePaintGenerating },
+              { key: 'edit' as const, label: language === 'zh' ? '完善渲染图（可选）' : 'Refine render (optional)', complete: Boolean(imagePaintPreview) },
               { key: 'model' as const, label: language === 'zh' ? '确认生成 3D 模型' : 'Confirm 3D model generation', complete: imageStatus === 'ready' },
             ].map((step, index, steps) => <div key={step.key} className="flex shrink-0 items-center">
               <button type="button" onClick={() => scrollToImageStep(step.key)} className="group flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-slate-50">
@@ -2348,8 +2501,10 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           <div className={`mt-5 flex items-center gap-2 rounded-lg border px-4 py-3 text-xs font-bold ${imagePaintGenerating ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : imagePaintPreview ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>{imagePaintGenerating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : imagePaintPreview ? <CheckCircle2 className="h-4 w-4" /> : <Palette className="h-4 w-4" />}{imagePaintGenerating ? labels.imageSurfaceGenerating : imagePaintPreview ? labels.imageSurfaceReady : (language === 'zh' ? '选择表面效果后将自动生成最终礼品渲染图。' : 'Selecting an effect automatically creates the final gift render.')}</div>
         </div>
 
+        {imagePaintPreview ? <div ref={imageEditStepRef} className="scroll-mt-24"><RenderImageEditor language={language} source={imagePaintPreview} onGenerate={editImageGeneratedRender} /></div> : null}
+
         <div ref={imageModelStepRef} className="scroll-mt-24 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
-          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">3</span><div><h3 className="text-base font-black text-slate-950">{language === 'zh' ? '确认生成 3D 模型' : 'Confirm 3D model generation'}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '确认最终礼品渲染图后，系统按照该图片生成可打印白膜模型。' : 'Confirm the final gift render, then generate a printable white model from it.'}</p></div></div>
+          <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#0b4f9c] text-sm font-black text-white">4</span><div><h3 className="text-base font-black text-slate-950">{language === 'zh' ? '确认生成 3D 模型' : 'Confirm 3D model generation'}</h3><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{language === 'zh' ? '确认最终礼品渲染图后，系统按照该图片生成可打印白膜模型。' : 'Confirm the final gift render, then generate a printable white model from it.'}</p></div></div>
           <div className="mt-5 flex flex-col gap-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-2 text-xs font-bold leading-5 text-blue-900"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.imageModelRule}</span></div>{imageStatus === 'generating' && modelProgress ? null : <button type="button" onClick={generateImageModel} disabled={!imagePaintPreview || !imageSurfaceEffect || imagePaintGenerating || imagePreparing} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-7 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45"><Boxes className="h-5 w-5" />{labels.generateWhiteModel}</button>}</div>
           {imageStatus === 'generating' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : null}
           {imageStatus === 'ready' ? <WhiteModelResult labels={labels} model={imageModel} onPreview={() => imageModel && setPreviewModel(imageModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-image-${Date.now()}`, generatedModelUrl: imageModel?.modelUrl, generatedModelAssetId: imageModel?.modelAssetId, previewAssetId: imageModel?.previewAssetId, draftRequestId: imageModel?.draftRequestId })} /> : null}
@@ -2357,6 +2512,7 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
       </div></div>
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
       {previewDetailImage ? <GiftZoomImageModal url={previewDetailImage.url} title={previewDetailImage.title} language={language} onClose={() => setPreviewDetailImage(null)} /> : null}
+      {aiConsentProvider ? <AiScenarioConsentModal key={aiConsentProvider} provider={aiConsentProvider} language={language} onCancel={() => resolveAiScenarioConsent(false)} onConfirm={() => resolveAiScenarioConsent(true)} /> : null}
     </section>
   );
 
@@ -2415,16 +2571,16 @@ function AiGiftStudio({ language, onOrder, onDraftUpdated, resumeDraft, onResume
           <div className="grid gap-7 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]"><div><label className="block text-sm font-black text-slate-700">{labels.customerBrief}<textarea value={brief} onChange={(event) => { setBrief(event.target.value); setBriefAutoGenerated(false); resetBriefResults(); }} rows={5} placeholder={labels.customerBriefPlaceholder} className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium leading-6 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><div className="mt-6 flex flex-wrap items-end justify-between gap-2"><div className="text-sm font-black text-slate-700">{labels.profileTags}</div><div className="text-[11px] font-bold text-slate-400">{labels.profileAutoHint}</div></div><div ref={profileMenusRef} className="mt-3 grid gap-2 sm:grid-cols-2">{profileGroups.map((group) => <ProfileDropdown key={group.id} group={group} language={language} selected={profileSelections[group.id]} open={openProfileGroup === group.id} onToggleOpen={() => { setPaintMenuOpen(false); setOpenProfileGroup((current) => current === group.id ? null : group.id); }} onToggleOption={(optionId) => toggleProfileOption(group.id, optionId)} />)}</div></div><div><div className="text-sm font-black text-slate-700">{labels.renderFinish}</div><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div ref={paintMenuRef} className={`relative ${paintMenuOpen ? 'z-30' : ''}`}><button type="button" aria-expanded={paintMenuOpen} aria-haspopup="dialog" onClick={() => { const switchingToPaint = finish !== 'paint'; setFinish('paint'); setOpenProfileGroup(null); setPaintMenuOpen((current) => switchingToPaint || !current); if (switchingToPaint) resetBriefResults(); }} className={`h-full w-full rounded-xl border p-4 text-left transition ${finish === 'paint' ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100' : 'border-slate-200 bg-white hover:border-cyan-300'}`}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full shadow-inner" style={{ backgroundColor: paintColor }} />{labels.paint}</div><div className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-slate-500"><span>{paintColor}</span><ChevronDown className={`h-4 w-4 transition ${paintMenuOpen ? 'rotate-180' : ''}`} /></div></div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.paintHint}</p></button>{finish === 'paint' && paintMenuOpen ? <div role="dialog" aria-label={labels.paintColor} className="absolute left-0 top-[calc(100%+0.5rem)] w-full min-w-[280px] rounded-xl border border-cyan-200 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]"><div className="flex items-start justify-between gap-3"><div><div className="text-xs font-black text-slate-900">{labels.paintColor}</div><p className="mt-1 text-[11px] font-medium leading-4 text-slate-500">{labels.paintColorHint}</p></div><span className="h-8 w-8 shrink-0 rounded-full border-4 border-white shadow" style={{ backgroundColor: paintColor }} /></div><div className="mt-3 grid grid-cols-8 gap-1.5">{paintColorPresets.map((preset) => { const active = paintColor === preset.hex; return <button key={preset.hex} type="button" onClick={() => { choosePaintColor(preset.hex); setPaintMenuOpen(false); }} aria-label={`${language === 'zh' ? preset.zh : preset.en} ${preset.hex}`} title={language === 'zh' ? preset.zh : preset.en} className={`relative aspect-square min-h-7 rounded-md border-2 transition hover:-translate-y-0.5 ${active ? 'border-[#0b4f9c] ring-2 ring-blue-100' : 'border-white shadow-sm'}`} style={{ backgroundColor: preset.hex }}>{active ? <Check className={`absolute inset-0 m-auto h-3.5 w-3.5 ${preset.hex === '#E7E5E4' ? 'text-slate-700' : 'text-white'}`} strokeWidth={3} /> : null}</button>; })}</div><div className="mt-3 flex items-center gap-2"><span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700"><span className="h-5 w-6 rounded border border-slate-200 shadow-inner" style={{ backgroundColor: paintColor }} />{labels.customPaintColor}</span><input value={paintColorInput} maxLength={7} onChange={(event) => { const value = event.target.value.toUpperCase(); setPaintColorInput(value); if (/^#[0-9A-F]{6}$/.test(value)) choosePaintColor(value); }} onBlur={() => { if (!/^#[0-9A-F]{6}$/.test(paintColorInput)) setPaintColorInput(paintColor); }} aria-label={labels.customPaintColor} placeholder="#FFFFFF" className="h-9 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 font-mono text-[11px] font-bold uppercase text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></div><p className="mt-2 text-[10px] font-bold leading-4 text-slate-400">{labels.paintColorRule}</p></div> : null}</div><button type="button" onClick={() => { const switchingToBronze = finish !== 'bronze'; setFinish('bronze'); setPaintMenuOpen(false); if (switchingToBronze) resetBriefResults(); }} className={`rounded-xl border p-4 text-left transition ${finish === 'bronze' ? 'border-amber-600 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 hover:border-amber-300'}`}><div className="flex items-center gap-2 text-sm font-black text-slate-900"><span className="h-5 w-5 rounded-full bg-gradient-to-br from-[#d9a963] to-[#6b3518] shadow-inner" />{labels.bronze}</div><p className="mt-2 text-xs font-medium leading-5 text-slate-500">{labels.bronzeHint}</p></button></div>
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-bold leading-5 text-amber-900"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /><span>{labels.processRule}</span></div></div><button type="button" onClick={generateRenders} disabled={(!brief.trim() && selectedProfileTags.length === 0) || briefStatus === 'generating-render'} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-5 text-sm font-black text-white shadow-sm transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_generate_click">{briefStatus === 'generating-render' ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <WandSparkles className="h-5 w-5" />}{briefStatus === 'generating-render' ? labels.generatingRender : labels.generateRender}</button></div></div>
 
-          {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} language={language} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => { setSelectedRender(index); setEditNotice(false); }} onPreview={() => setPreviewRender({ url: giftImageSource(image), index })} labels={labels} />)}</div>
+          {['render-ready', 'generating-model', 'model-ready'].includes(briefStatus) ? <div className="mt-8 border-t border-slate-200 pt-7"><h3 className="text-lg font-black text-slate-950">{labels.renderReady}</h3><p className="mt-1 text-sm font-medium text-slate-500">{labels.renderReadyHint}</p><div className="mt-5 grid gap-4 md:grid-cols-3">{renderImages.map((image, index) => <RenderConcept key={`${index}-${giftImageSource(image).slice(-24)}`} language={language} finish={finish} index={index} source={giftImageSource(image)} selected={selectedRender === index} onSelect={() => setSelectedRender(index)} onPreview={() => setPreviewRender({ url: giftImageSource(image), index })} labels={labels} />)}</div>
 
-            {selectedRender !== null ? <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/40 p-5"><div className="flex items-start gap-3"><ImagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#0b4f9c]" /><div><h4 className="text-sm font-black text-slate-900">{labels.editTitle}</h4><p className="mt-1 text-xs font-medium leading-5 text-slate-500">{labels.editDescription}</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]"><label className="text-xs font-black text-slate-700">{labels.editPrompt}<textarea value={editPrompt} onChange={(event) => { setEditPrompt(event.target.value); setEditError(null); }} rows={3} placeholder={labels.editPlaceholder} className="mt-2 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-6 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100" /></label><label className="flex cursor-pointer flex-col justify-center rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center transition hover:border-cyan-400"><input type="file" accept="image/png" className="sr-only" onChange={(event) => setEditMask(event.target.files?.[0] || null)} /><span className="text-xs font-black text-slate-700">{editMask?.name || labels.chooseMask}</span><span className="mt-1 text-[11px] font-medium leading-4 text-slate-400">{labels.optionalMask} · {labels.maskHint}</span></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={editSelectedImage} disabled={!editPrompt.trim() || editing} className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#0b4f9c] bg-white px-5 text-sm font-black text-[#0b4f9c] transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_ai_edit_image_click">{editing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}{editing ? labels.editingImage : labels.editImage}</button>{editing ? <span className="text-xs font-bold text-[#0b4f9c]">{labels.editingImage}</span> : null}{editNotice ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" />{labels.editedVersion}</span> : null}{editError ? <span role="alert" className="basis-full rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">{editError}</span> : null}</div></div> : null}
+            {selectedRender !== null && renderImages[selectedRender] ? <div className="mt-6"><RenderImageEditor language={language} source={giftImageSource(renderImages[selectedRender])} onGenerate={editSelectedImage} /></div> : null}
 
             {briefStatus === 'generating-model' && modelProgress ? <ModelGenerationProgressBar progress={modelProgress} /> : <button type="button" onClick={generateBriefModel} disabled={selectedRender === null} className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#0b4f9c] px-6 text-sm font-black text-white transition hover:bg-[#083f7e] disabled:cursor-not-allowed disabled:opacity-45" data-umami-event="gift_render_to_3d_click"><Boxes className="h-5 w-5" />{labels.generateFromRender}</button>}</div> : null}
           {briefStatus === 'model-ready' ? <WhiteModelResult labels={labels} model={briefModel} onPreview={() => briefModel && setPreviewModel(briefModel)} onOrder={() => onOrder({ ...generatedModel, id: `ai-brief-${Date.now()}`, generatedModelUrl: briefModel?.modelUrl, generatedModelAssetId: briefModel?.modelAssetId, previewAssetId: briefModel?.previewAssetId, draftRequestId: briefModel?.draftRequestId })} /> : null}
         </div>
       )}
       {previewModel ? <GiftModelModal language={language} model={previewModel} onClose={() => setPreviewModel(null)} /> : null}
-      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => { setSelectedRender(previewRender.index); setEditNotice(false); }} /> : null}
+      {previewRender ? <GiftRenderPreviewModal url={previewRender.url} index={previewRender.index} language={language} onClose={() => setPreviewRender(null)} onSelect={() => setSelectedRender(previewRender.index)} /> : null}
     </section>
   );
 }
