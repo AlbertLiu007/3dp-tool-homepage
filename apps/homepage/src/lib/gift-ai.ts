@@ -550,7 +550,12 @@ async function normalizedImageBuffer(buffer: Buffer, model: string, options: Ima
           try {
             quality = await inspectGiftImageQuality(corrected);
           } catch (correctedError) {
-            if (!(correctedError instanceof ImageQualityRejectedError) || !/boundary/i.test(correctedError.message)) throw correctedError;
+            // inspectGiftImageQuality checks border whiteness before the
+            // explicit edge-contact metric. A valid cutout that reaches the
+            // canvas edge can therefore be reported as either a background or
+            // boundary failure. Both cases need the same deterministic white
+            // safety margin after local background isolation.
+            if (!(correctedError instanceof ImageQualityRejectedError) || !/(?:background|boundary)/i.test(correctedError.message)) throw correctedError;
             const metadata = await sharp(corrected).metadata();
             const width = metadata.width;
             const height = metadata.height;

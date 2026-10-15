@@ -33,7 +33,9 @@ async function main() {
   }).composite([
     { input: await sharp({ create: { width: 180, height: 360, channels: 3, background: '#7A4B31' } }).png().toBuffer(), left: 0, top: 76 },
   ]).png().toBuffer();
-  await assert.rejects(() => inspectGiftImageQuality(touchingEdge), /(boundary|background)/i);
+  // Border whiteness is evaluated before explicit edge contact, so a subject
+  // that reaches the canvas is classified as a background failure.
+  await assert.rejects(() => inspectGiftImageQuality(touchingEdge), /background/i);
 
   const inset = await sharp(touchingEdge).resize(460, 460, { fit: 'fill' }).png().toBuffer();
   const safelyReframed = await sharp({
@@ -61,6 +63,7 @@ async function main() {
   const cleanedMetrics = await inspectGiftImageQuality(cleanedWhiteMatte);
   assert.equal(cleanedMetrics.borderWhiteRatio, 1);
   assert.equal(cleanedMetrics.edgeForegroundRatio, 0);
+
   console.log('Gift image quality regression checks passed.', metrics);
 }
 
