@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { inspectGiftImageQuality } from '../src/lib/gift-ai';
+import { createTransparentPng, createWhiteMattePng } from '../src/lib/image-transparency';
 
 async function main() {
   const blank = await sharp({
@@ -41,6 +42,25 @@ async function main() {
   const reframedMetrics = await inspectGiftImageQuality(safelyReframed);
   assert.equal(reframedMetrics.borderWhiteRatio, 1);
   assert.equal(reframedMetrics.edgeForegroundRatio, 0);
+
+  // Image providers sometimes return a valid cutout whose transparent pixels
+  // retain dark RGB values and a tiny non-zero alpha. Before normalization,
+  // flattening that image produces a gray border and fails the pure-white
+  // background check. The preserved-alpha path must discard that invisible
+  // residue without changing the opaque subject.
+  const hazyCutout = await sharp({
+    create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 24 / 255 } },
+  }).composite([
+    { input: await sharp({ create: { width: 220, height: 300, channels: 4, background: '#7A4B31FF' } }).png().toBuffer(), left: 146, top: 106 },
+  ]).png().toBuffer();
+  const hazyWhiteMatte = await createWhiteMattePng(hazyCutout);
+  await assert.rejects(() => inspectGiftImageQuality(hazyWhiteMatte), /background/i);
+
+  const cleanedCutout = await createTransparentPng(hazyCutout, undefined, { preserveExistingAlpha: true });
+  const cleanedWhiteMatte = await createWhiteMattePng(cleanedCutout);
+  const cleanedMetrics = await inspectGiftImageQuality(cleanedWhiteMatte);
+  assert.equal(cleanedMetrics.borderWhiteRatio, 1);
+  assert.equal(cleanedMetrics.edgeForegroundRatio, 0);
   console.log('Gift image quality regression checks passed.', metrics);
 }
 

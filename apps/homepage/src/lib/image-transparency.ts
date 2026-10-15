@@ -162,6 +162,15 @@ export async function createTransparentPng(
     const minimumPixels = Math.max(32, Math.floor(width * height * 0.0005));
     const borderIsClean = opaqueBorderPixels <= Math.max(4, Math.floor(borderPixels * 0.002));
     if (borderIsClean && transparentPixels >= Math.max(10, Math.floor(width * height * 0.001)) && subjectPixels >= minimumPixels) {
+      // Some providers encode an apparently transparent backdrop as dark RGB
+      // pixels with a tiny non-zero alpha value. Keeping those bytes unchanged
+      // creates a gray fringe when the image is later flattened onto white,
+      // even though the alpha-only border check correctly considers the edge
+      // transparent. Snap only the already-negligible alpha range to zero; the
+      // visible anti-aliased subject edge (alpha >= 32) remains untouched.
+      for (let offset = 3; offset < raw.length; offset += 4) {
+        if (raw[offset] < 32) raw[offset] = 0;
+      }
       return await sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
     }
   }
