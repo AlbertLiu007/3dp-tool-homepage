@@ -50,7 +50,7 @@ import { ToolHeader } from '@unionam/shared-ui';
 import { WeComQrLogin } from '@/components/gift/wecom-qr-login';
 import { GiftModelModal, readGiftModelQuoteMeasurement, type GeneratedGiftModel } from '@/components/model-viewer/gift-model-modal';
 import { GIFT_AI_CONSENT_HEADER, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
-import { canUseGiftGenerativeServices } from '@/lib/gift-generative-access';
+import { canUseGiftGenerativeServices, isGiftGenerativeServiceAllowlisted } from '@/lib/gift-generative-access';
 import { isPersonRenderReference, renderReferencePurposes, toggleRenderReferencePurpose, type RenderReferencePurpose } from '@/lib/gift-render-reference';
 import { useLanguage } from '@/lib/i18n/use-language';
 import { acceptUnionAmPrivacyPolicy, readUnionAmPrivacyPolicyAcceptance } from '@/lib/privacy';
@@ -2970,6 +2970,25 @@ function AiAccessNotice({ employee, t, onUpdated }: { employee: GiftEmployee; t:
   );
 }
 
+function AiFilingNotice({ language }: { language: GiftLanguage }) {
+  const labels = studioCopy[language];
+  return (
+    <section id="ai-generate" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f0fbff_0%,#ffffff_54%,#eff6ff_100%)] p-6 md:p-8">
+        <div className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black text-cyan-800 shadow-sm"><WandSparkles className="h-4 w-4" />AI Gift Studio</div>
+        <h2 className="mt-4 text-2xl font-black text-slate-950 md:text-3xl">{labels.aiTitle}</h2>
+      </div>
+      <div className="grid min-h-56 place-items-center px-6 py-10 text-center md:px-8">
+        <div className="max-w-2xl">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-amber-700"><Clock3 className="h-6 w-6" /></div>
+          <h3 className="mt-5 text-xl font-black text-slate-950">{labels.aiFilingTitle}</h3>
+          <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{labels.aiFilingDescription}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: { language: GiftLanguage; t: GiftCopy; employee: GiftEmployee; onLogout: () => void; onEmployeeUpdated: (employee: GiftEmployee) => void }) {
   const [selectedModel, setSelectedModel] = useState<GiftModel | null>(null);
   const [catalogPreviewModel, setCatalogPreviewModel] = useState<GeneratedGiftModel | null>(null);
@@ -2986,7 +3005,10 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState('');
   const labels = studioCopy[language];
-  const aiServiceAvailable = canUseGiftGenerativeServices(employee);
+  const aiServiceAllowlisted = process.env.NODE_ENV !== 'production' || isGiftGenerativeServiceAllowlisted(employee);
+  const aiServiceAvailable = process.env.NODE_ENV !== 'production'
+    ? employee.employmentStatus === 'active' && employee.approvalStatus === 'approved'
+    : canUseGiftGenerativeServices(employee);
 
   useEffect(() => {
     let active = true;
@@ -3073,7 +3095,7 @@ function GiftDashboard({ language, t, employee, onLogout, onEmployeeUpdated }: {
 
       <MyRequestsPanel language={language} refreshKey={requestRefreshKey} expanded={myRequestsExpanded} onExpandedChange={setMyRequestsExpanded} onPreviewModel={setRequestPreviewModel} onPreviewImage={setRequestPreviewImage} onResume={resumeDraft} />
 
-      <section className="mx-auto max-w-[1480px] px-5 py-4">{aiServiceAvailable ? <AiGiftStudio language={language} onOrder={setSelectedModel} onDraftUpdated={() => setRequestRefreshKey((value) => value + 1)} resumeDraft={draftResume} onResumeConsumed={() => setDraftResume(null)} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />}</section>
+      <section className="mx-auto max-w-[1480px] px-5 py-4">{aiServiceAllowlisted ? (aiServiceAvailable ? <AiGiftStudio language={language} onOrder={setSelectedModel} onDraftUpdated={() => setRequestRefreshKey((value) => value + 1)} resumeDraft={draftResume} onResumeConsumed={() => setDraftResume(null)} /> : <AiAccessNotice employee={employee} t={t} onUpdated={onEmployeeUpdated} />) : <AiFilingNotice language={language} />}</section>
 
       <section className="mx-auto max-w-[1480px] px-5 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
