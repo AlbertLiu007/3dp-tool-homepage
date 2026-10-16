@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { getGiftSession } from '@/lib/gift-auth';
 import { GiftAiError } from '@/lib/gift-ai';
 import { hasGiftAiScenarioConsent, type GiftAiConsentProvider } from '@/lib/gift-ai-consent';
+import { canUseGiftGenerativeServices } from '@/lib/gift-generative-access';
 import {
   GiftAccessError,
-  canUseGiftGenerativeServices,
   isLocalGiftDevelopmentSession,
   requireGiftEmployeeAccess,
   reserveGiftAiUsage,
